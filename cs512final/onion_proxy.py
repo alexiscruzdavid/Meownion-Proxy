@@ -1,9 +1,10 @@
-import cryptography
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
 import socket
 import relay_directory
 import ssl
 import sys
-
+import os
 
 
 
@@ -27,21 +28,29 @@ def open_tls_connection(src_ip, dest_ip, certfile, keyfile):
 def establish_circuit():
     pass
 
-def fetch_directory():
-    pass 
+
         
-        
+def encrypt_message(byte_message, key):
+    padder = padding.PKCS7(128).padder()
+    byte_message = padder.update(byte_message) + padder.finalize()
+    iv = os.urandom(16)
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+    encryptor = cipher.encryptor()
+    cipher_text = encryptor.update(byte_message) + encryptor.finalize()
+    return cipher_text
+
 def handle_user_application():
     pass
     
-def send_message(message, sock):
-    
-    
-    pass
+def encrypt_message_with_circuit(message, circuit):
+    for circuit_node in circuit:
+        _, node_key = circuit_node.node_ip, circuit_node.node_key
+        message = encrypt_message(message, node_key)
+    return message
 
 
 if __name__ == '__main__':
-    print('Starting Onion Proxy...')
+    print('Starting MeOwnion Proxy...')
     print(" /\_/\   ")
     print("( o.o )  ")
     print(" > ^ <   ")
@@ -66,8 +75,8 @@ if __name__ == '__main__':
         dest_ip = input('Type in your destination ip ')
         print('Sending Message {} to {}'.format(message, dest_ip))
         circuit = relay_directory.fetch_circuit(src_ip, dest_ip)
-        
-        send_message(message, circuit)
+        byte_cipher_text = encrypt_message_with_circuit(message.encode('iso-8859-1'), circuit)
+        print('Your encrypted message is {}'.format(byte_cipher_text.decode('iso-8859-1')))
     
     
     
