@@ -1,5 +1,7 @@
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
+
+from utils.certificates import Certificates
 from typing import List, Tuple
 import socket
 import relay_directory
@@ -13,39 +15,31 @@ UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
 
 class OnionRelay:
-    def __init__(self, ip: str, port:int):
+    def __init__(self, name: str, ip: str, port:int):
+        self.name = name
         self.ip = ip
         self.port = port
+        self.certificates = Certificates(name, ip)
         self.connections = {}
         self.circuits = {}
-        self.onion_key = None
-        self.identity_key = None
-        self.server_socket = None
         self.start()
 
     def start(self):
-        self.create_keys()
-        self.create_socket()
-        self.accept_tls_connections()
+        self.update_incoming_connections()
+        self.update_outgoing_connections()
         self.upload_state()
-        self.update_connections()
         print('Onion Relay started at {}:{}'.format(self.ip, self.port))
-
-    def create_keys(self):
-        # Make actual certs and keys and stuff
-        self.onion_key = os.urandom(32)
-        self.identity_key = os.urandom(32)
 
     def create_socket(self):
         server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        server_context.load_cert_chain(certfile, keyfile)
+        server_context.load_cert_chain(self.certificates.tls_cert_file, self.certificates.tls_key_file)
 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.ip, self.port))
         self.server_socket.listen(tor.MAX_RELAYS + tor.MAX_CLIENTS)
         print('Onion Relay listening at {}:{}'.format(self.ip, self.port))
 
-    def accept_tls_connections(self):
+    def update_incoming_connections(self):
         '''
         Accept incoming tls connections from relays or clients
         :param dest_ip:
@@ -58,7 +52,7 @@ class OnionRelay:
 
             tls_server_sock = server_context.wrap_socket(client_sock, server_side=True)
 
-    def create_tls_connection(self, dest_ip: str, dest_port: int):
+    def update_outgoing_connections(self):
         pass
 
     def upload_state(self):
