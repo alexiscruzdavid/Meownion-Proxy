@@ -9,3 +9,9 @@ env/
 # Ignore IDE specific files
 .idea/
 .vscode/
+
+# VS Code settings
+.vscode/
+
+# macOS system files
+.DS_Store

@@ -19,18 +19,22 @@ class OnionRelay:
         self.connections = {}
         self.circuits = {}
         self.onion_key = None
-        self.long_term_key = None
+        self.identity_key = None
         self.server_socket = None
+        self.start()
 
+    def start(self):
         self.create_keys()
         self.create_socket()
+        self.accept_tls_connections()
         self.upload_state()
         self.update_connections()
+        print('Onion Relay started at {}:{}'.format(self.ip, self.port))
 
     def create_keys(self):
         # Make actual certs and keys and stuff
         self.onion_key = os.urandom(32)
-        self.long_term_key = os.urandom(32)
+        self.identity_key = os.urandom(32)
 
     def create_socket(self):
         server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -39,8 +43,23 @@ class OnionRelay:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.ip, self.port))
         self.server_socket.listen(tor.MAX_RELAYS + tor.MAX_CLIENTS)
-
         print('Onion Relay listening at {}:{}'.format(self.ip, self.port))
+
+    def accept_tls_connections(self):
+        '''
+        Accept incoming tls connections from relays or clients
+        :param dest_ip:
+        :param dest_port:
+        TODO: Prevent blocking the main thread
+        '''
+        while True:
+            client_sock, client_addr = self.server_socket.accept()
+            print('Received connection from {}'.format(client_addr))
+
+            tls_server_sock = server_context.wrap_socket(client_sock, server_side=True)
+
+    def create_tls_connection(self, dest_ip: str, dest_port: int):
+        pass
 
     def upload_state(self):
         '''
@@ -65,7 +84,6 @@ class OnionRelay:
             relays = self.download_states()
             time.sleep(DOWNLOAD_INTERVAL)
 
-
     def create_circuit(self):
         pass
 
@@ -75,26 +93,5 @@ class OnionRelay:
     def destroy_circuit(self):
         pass
 
-
     def __str__(self):
         return 'IP: {}:{} /nOnion Key: {} /nConnections :{}'.format(self.ip, self.port, self.onion_key, self.connections)
-
-
-
-
-def open_tls_connection(src_ip, dest_ip, certfile, keyfile):
-    server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    # the long term identiy key is the keyfile
-    server_context.load_cert_chain(certfile, keyfile)
-
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.bind((src_ip, 8443))
-    server_sock.listen(5)
-
-    print('Onion Proxy listening on port 8443...')
-
-    while True:
-        client_sock, client_addr = server_sock.accept()
-        print('Received connection from {}'.format(client_addr))
-
-        tls_server_sock = server_context.wrap_socket(client_sock, server_side=True)
