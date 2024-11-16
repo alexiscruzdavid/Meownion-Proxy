@@ -4,16 +4,18 @@ import subprocess
 import sys
 import ssl
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 class Certificates:
+
     def __init__(self, name: str, ip: str):
         self.name = name
-        self.tls_cert_file = 'certs/tls/{}_cert.pem'.format(name)
-        self.tls_key_file = 'certs/tls/{}_key.pem'.format(name)
-        self.identity_key_file = 'certs/identity/{}_identity_key.pem'.format(name)
-        self.identity_pub_key_file = 'certs/identity/{}_identity_pub.pem'.format(name)
-        self.onion_key_file = 'certs/onion/{}_onion_key.pem'.format(name)
-        self.onion_pub_key_file = 'certs/onion/{}_onion_pub.pem'.format(name)
+        self.tls_cert_file = os.path.join(BASE_DIR, '../../certs/tls/{}_cert.pem'.format(name))
+        self.tls_key_file = os.path.join(BASE_DIR, '../../certs/tls/{}_key.pem'.format(name))
+        self.identity_key_file = os.path.join(BASE_DIR, '../../certs/identity/{}_identity_key.pem'.format(name))
+        self.identity_pub_key_file = os.path.join(BASE_DIR, '../../certs/identity/{}_identity_pub.pem'.format(name))
+        self.onion_key_file = os.path.join(BASE_DIR, '../../certs/onion/{}_onion_key.pem'.format(name))
+        self.onion_pub_key_file = os.path.join(BASE_DIR, '../../certs/onion/{}_onion_pub.pem'.format(name))
         self.server_context, self.client_context = None, None
 
         self.update_tls_certs(ip)
