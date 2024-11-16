@@ -25,8 +25,6 @@ def open_tls_connection(src_ip, dest_ip, certfile, keyfile):
         
         tls_server_sock = server_context.wrap_socket(client_sock, server_side=True)
 
-def establish_circuit():
-    pass
 
 
         
@@ -39,7 +37,8 @@ def encrypt_message(byte_message, key):
     cipher_text = encryptor.update(byte_message) + encryptor.finalize()
     return cipher_text
 
-def handle_user_application():
+def send_message_with_circuit():
+    
     pass
     
 def encrypt_message_with_circuit(message, circuit):
@@ -77,6 +76,6 @@ if __name__ == '__main__':
         circuit = relay_directory.fetch_circuit(src_ip, dest_ip)
         byte_cipher_text = encrypt_message_with_circuit(message.encode('iso-8859-1'), circuit)
         print('Your encrypted message is {}'.format(byte_cipher_text.decode('iso-8859-1')))
-    
+        send_message_with_circuit(byte_cipher_text, circuit)
     
     
