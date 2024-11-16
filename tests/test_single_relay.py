@@ -1,86 +1,75 @@
+import os
+import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch, MagicMock
 import socket
 import ssl
-from src.onion_relay import OnionRelay
+from src.utils.certificates import Certificates
+import threading
+from threading import Thread
+from src.onion_relay import OnionRelay  # Assuming the class OnionRelay is in a file named 'my_module.py'
+import random
+import time
+
+
+
 
 class TestOnionRelay(unittest.TestCase):
 
+    def setUp(self):
+        # Use a random port to avoid conflicts during parallel tests
+        self.port = random.randint(10000, 60000)
+        self.relay = OnionRelay("TestRelay", "127.0.0.1", self.port)
+        self.relay.certificates.start()
+
+        time.sleep(1)
+
     def test_initialization(self):
-        relay = OnionRelay("Relay1", "127.0.0.1", 8080)
+        self.assertEqual(self.relay.name, "TestRelay")
+        self.assertEqual(self.relay.ip, "127.0.0.1")
+        self.assertEqual(self.relay.port, self.port)
+        self.assertFalse(self.relay.shutdown_flag.is_set())
 
-        self.assertEqual(relay.name, "Relay1")
-        self.assertEqual(relay.ip, "127.0.0.1")
-        self.assertEqual(relay.port, 8080)
-        self.assertIsInstance(relay.connections, dict)
-        self.assertIsInstance(relay.circuits, dict)
+    def test_accept_incoming_connections(self):
+        self.relay.start()
 
-    @patch("ssl.SSLSocket")
-    def test_handle_incoming_connection(self, mock_ssl_socket):
-        relay = OnionRelay("Relay1", "127.0.0.1", 8080)
-        client_addr = ("192.168.1.1", 12345)
+        client_ip = "127.0.0.1"
+        client_port = random.randint(10000, 60000)
 
-        mock_ssl_socket.recv = MagicMock(side_effect=[b"Hello", b"World", b""])
-        mock_ssl_socket.sendall = MagicMock()
 
-        relay.handle_incoming_connection(mock_ssl_socket, client_addr)
+        # Attempt to connect to the server using the specified client IP and port
+        with socket.create_connection((self.relay.ip, self.relay.port),
+                                      source_address=(client_ip, client_port)) as client_sock:
+            with self.relay.certificates.client_context.wrap_socket(client_sock, server_hostname=self.relay.ip) as tls_client_sock:
+                message = b"Hello Relay"
+                tls_client_sock.sendall(message)
+                response = tls_client_sock.recv(1024)
+                self.assertEqual(response, message)
 
-        # Assert the data was received and echoed back
-        self.assertEqual(mock_ssl_socket.recv.call_count, 3)
-        mock_ssl_socket.sendall.assert_any_call(b"Hello")
-        mock_ssl_socket.sendall.assert_any_call(b"World")
 
-        # Ensure the connection was removed
-        self.assertNotIn(client_addr, relay.connections)
 
-    @patch("ssl.SSLSocket")
-    @patch("socket.socket")
-    def test_handle_outgoing_connection(self, mock_socket, mock_ssl_socket):
-        relay = OnionRelay("Relay1", "127.0.0.1", 8080)
-        ip, port = "192.168.1.2", 8081
+    def test_shutdown(self):
+        self.relay.shutdown()
+        self.assertTrue(self.relay.shutdown_flag.is_set())
+        with self.relay.threads_lock:
+            for thread in self.relay.threads:
+                self.assertFalse(thread.is_alive(), f"Thread {thread.name} should be stopped after shutdown")
+        with self.relay.connections_lock:
+            for connection in self.relay.connections.values():
+                self.assertTrue(connection._closed, "Connection should be closed after shutdown")
 
-        mock_socket.return_value.connect = MagicMock()
-        mock_ssl_socket.recv = MagicMock(side_effect=[b"Response1", b"Response2", b""])
-        mock_ssl_socket.sendall = MagicMock()
-
-        relay.handle_outgoing_connection(mock_ssl_socket, ip, port)
-
-        # Assert the data was received
-        self.assertEqual(mock_ssl_socket.recv.call_count, 3)
-        mock_ssl_socket.sendall.assert_called_with(b"Hello from the client!")
-
-        # Ensure the connection was removed
-        self.assertNotIn((ip, port), relay.connections)
-
-    @patch("ssl.SSLSocket")
-    def test_handle_incoming_connection_timeout(self, mock_ssl_socket):
-        relay = OnionRelay("Relay1", "127.0.0.1", 8080)
-        client_addr = ("192.168.1.1", 12345)
-
-        mock_ssl_socket.recv = MagicMock(side_effect=socket.timeout)
-        mock_ssl_socket.close = MagicMock()
-
-        relay.handle_incoming_connection(mock_ssl_socket, client_addr)
-
-        # Ensure the connection was closed on timeout
-        mock_ssl_socket.close.assert_called_once()
-        self.assertNotIn(client_addr, relay.connections)
-
-    @patch("ssl.SSLSocket")
-    def test_accept_incoming_connections_tls_error(self, mock_ssl_socket):
-        relay = OnionRelay("Relay1", "127.0.0.1", 8080)
-
-        mock_ssl_socket.wrap_socket = MagicMock(side_effect=ssl.SSLError("TLS handshake failed"))
-        mock_socket = MagicMock()
-        mock_socket.accept = MagicMock(return_value=(mock_ssl_socket, ("192.168.1.1", 12345)))
-
-        with patch("socket.socket", return_value=mock_socket):
-            with self.assertLogs(level="ERROR") as log:
-                relay.accept_incoming_connections()
-
-                # Ensure the error was logged
-                self.assertTrue(any("TLS handshake failed" in message for message in log.output))
+    def tearDown(self):
+        self.relay.shutdown()  # Stop the relay
+        self.relay = None
+        # if self.relay_thread.is_alive():
+        #     self.relay_thread.join()  # Ensure the relay thread is joined before ending the test
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+

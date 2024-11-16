@@ -15,3 +15,5 @@ env/
 
 # macOS system files
 .DS_Store
+
+certs/ca_cert.srl

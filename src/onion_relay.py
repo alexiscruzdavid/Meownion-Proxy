@@ -5,6 +5,7 @@ import ssl
 from . import start_tor as tor
 import threading
 import logging
+import signal
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
@@ -23,16 +24,25 @@ class OnionRelay:
         self.connections = {}
         self.connections_lock = threading.Lock()
         self.circuits = {}
-        self.startup()
+        self.shutdown_flag = threading.Event()
+        self.threads = []
+        self.threads_lock = threading.Lock()
         self.tags = {}
         for tag in TAGS:
             self.tags[tag] = f"[{tag.upper()}] : OnionRelay {self.name} :"
 
         logging.info(f"{self.tags['start']} initialized at {self.ip}:{self.port}")
 
-    def startup(self):
+    def start(self):
+        signal.signal(signal.SIGINT, self.shutdown)
+        signal.signal(signal.SIGTERM, self.shutdown)
+
+        self.certificates.start()
         incoming_connections_thread = threading.Thread(target=self.accept_incoming_connections, daemon=True)
+        with self.threads_lock:
+            self.threads.append(incoming_connections_thread)
         incoming_connections_thread.start()
+
 
     def accept_incoming_connections(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
@@ -40,18 +50,22 @@ class OnionRelay:
             server_sock.listen(tor.MAX_RELAYS + tor.MAX_CLIENTS)
             logging.info(f"{self.tags['connection']} listening on {self.ip}:{self.port}")
 
-            while True:
+            while not self.shutdown_flag.is_set():
                 client_sock, client_addr = server_sock.accept()
                 tls_client_sock = None
                 logging.info(f"{self.tags['connection']} accepted connection from {client_addr}")
                 try:
                     tls_client_sock = self.certificates.server_context.wrap_socket(client_sock, server_side=True)
                     tls_client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(tls_client_sock, client_addr), daemon=True)
+                    with self.threads_lock:
+                        self.threads.append(tls_client_sock_thread)
                     tls_client_sock_thread.start()
+
                 except ssl.SSLError as e:
                     logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
                 finally:
-                    if tls_client_sock: tls_client_sock.close()
+                    if tls_client_sock:
+                        tls_client_sock.close()
 
     def handle_incoming_connection(self, tls_client_sock: ssl.SSLSocket, client_addr: Tuple[str, int]):
         '''
@@ -61,7 +75,7 @@ class OnionRelay:
             self.connections[client_addr] = tls_client_sock
 
         try:
-            while True:
+            while not self.shutdown_flag.is_set():
                 data = tls_client_sock.recv(1024)
                 if not data:
                     break
@@ -145,6 +159,18 @@ class OnionRelay:
 
     def destroy_circuit(self):
         pass
+
+    def shutdown(self, signum=None, frame=None):
+        logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
+        self.shutdown_flag.set()
+        with self.threads_lock:
+            for thread in self.threads:
+                if thread.is_alive():
+                    thread.join()
+        with self.connections_lock:
+            for connection in self.connections.values():
+                connection.close()
+        logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")
 
     def __str__(self):
         return 'IP: {}:{} /nOnion Key: {} /nConnections :{}'.format(self.ip, self.port, self.onion_key, self.connections)
