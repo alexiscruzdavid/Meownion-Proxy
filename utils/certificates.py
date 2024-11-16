@@ -2,6 +2,8 @@ import os
 import shutil
 import subprocess
 import sys
+import ssl
+
 
 class Certificates:
     def __init__(self, name: str, ip: str):
@@ -12,8 +14,9 @@ class Certificates:
         self.identity_pub_key_file = 'certs/identity/{}_identity_pub.pem'.format(name)
         self.onion_key_file = 'certs/onion/{}_onion_key.pem'.format(name)
         self.onion_pub_key_file = 'certs/onion/{}_onion_pub.pem'.format(name)
+        self.server_context, self.client_context = None, None
 
-        self.update_tls_cert(ip)
+        self.update_tls_certs(ip)
         self.update_identity_key()
         self.update_onion_key()
 
@@ -29,11 +32,16 @@ class Certificates:
         """
         generate_rsa_key_pair(self.identity_key_file, self.identity_pub_key_file)
 
-    def update_tls_cert(self, ip):
+    def update_tls_certs(self, ip):
         """
         For long term regeneration, changing ip, or security reasons
         """
         generate_ssl_cert(self.tls_cert_file, self.tls_key_file, self.name, ip)
+        self.server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self.server_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
+        self.server_context.verify_mode = ssl.CERT_REQUIRED
+        self.client_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
 
 def generate_ssl_cert(
     cert_file: str,
