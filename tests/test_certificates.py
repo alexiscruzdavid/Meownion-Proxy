@@ -10,11 +10,6 @@ class TestCertificates(unittest.TestCase):
         self.cert = Certificates("Relay1", "127.0.0.1")
 
     def test_certificates(self):
-        # Generate all certificates and keys
-        self.cert.update_tls_certs("127.0.0.1")
-        self.cert.update_identity_key()
-        self.cert.update_onion_key()
-
         # Assertions: Check that all files are created
         self.assertTrue(os.path.exists(self.cert.tls_cert_file), "TLS certificate file not created.")
         self.assertTrue(os.path.exists(self.cert.tls_key_file), "TLS key file not created.")
@@ -51,8 +46,8 @@ class TestCertificates(unittest.TestCase):
     def tearDown(self):
         # Clean up all generated certificate and key files
         for file_path in [
-            self.cert.tls_cert_file, self.cert.tls_key_file, 
-            self.cert.identity_key_file, self.cert.identity_pub_key_file, 
+            self.cert.tls_cert_file, self.cert.tls_key_file,
+            self.cert.identity_key_file, self.cert.identity_pub_key_file,
             self.cert.onion_key_file, self.cert.onion_pub_key_file
         ]:
             if os.path.exists(file_path):

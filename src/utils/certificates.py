@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import ssl
+import tempfile
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -42,11 +43,12 @@ class Certificates:
         """
         generate_ssl_cert(self.tls_cert_file, self.tls_key_file, self.tls_csr_file, self.CA_cert_file, self.CA_key_file, self.name, ip)
         self.server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self.server_context.load_verify_locations(self.CA_cert_file)
         self.server_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
         self.server_context.verify_mode = ssl.CERT_REQUIRED
-        self.server_context.load_verify_locations(self.CA_cert_file)
         self.client_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         self.client_context.load_verify_locations(self.CA_cert_file)
+        self.client_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
         self.ip = ip
 
 
@@ -85,31 +87,44 @@ def generate_ssl_cert(
         print(e)
         sys.exit(1)
 
-    # Step 2: Sign the CSR using the CA
-    print(f"Signing certificate using custom CA for relay {cn} at {ip} ...")
-    cmd = [
-        openssl_path,
-        "x509",
-        "-req",
-        "-in", csr_file,
-        "-CA", ca_cert_file,
-        "-CAkey", ca_key_file,
-        "-CAcreateserial",
-        "-out", cert_file,
-        "-days", "365",
-        "-sha256",
-    ]
+    # Step 2: Create a temporary configuration file with SAN
+    with tempfile.NamedTemporaryFile(delete=False) as san_config_file:
+        san_config_file.write(f"""
+[ v3_ca ]
+subjectAltName = IP:{ip}
+""".encode())
+        san_config_file.flush()
 
-    print("Running command to sign the CSR:")
-    print(" ".join(cmd))
+        # Step 3: Sign the CSR using the CA and the temporary config file
+        print(f"Signing certificate using custom CA for relay {cn} at {ip} ...")
+        cmd = [
+            openssl_path,
+            "x509",
+            "-req",
+            "-in", csr_file,
+            "-CA", ca_cert_file,
+            "-CAkey", ca_key_file,
+            "-CAcreateserial",
+            "-out", cert_file,
+            "-days", "365",
+            "-sha256",
+            "-extfile", san_config_file.name,
+            "-extensions", "v3_ca"
+        ]
 
-    try:
-        subprocess.run(cmd, check=True, shell=False)
-        print(f"Successfully signed certificate '{cert_file}' using CA.")
-    except subprocess.CalledProcessError as e:
-        print("An error occurred while signing the certificate:")
-        print(e)
-        sys.exit(1)
+        print("Running command to sign the CSR:")
+        print(" ".join(cmd))
+
+        try:
+            subprocess.run(cmd, check=True, shell=False)
+            print(f"Successfully signed certificate '{cert_file}' using CA.")
+        except subprocess.CalledProcessError as e:
+            print("An error occurred while signing the certificate:")
+            print(e)
+            sys.exit(1)
+        finally:
+            if san_config_file and os.path.exists(san_config_file.name):
+                os.remove(san_config_file.name)
 
 
 def generate_rsa_key_pair(private_key_path: str, public_key_path: str):

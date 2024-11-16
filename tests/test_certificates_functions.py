@@ -46,16 +46,28 @@ class TestCertificatesFunctions(unittest.TestCase):
         # Ensure SSL context creation was mocked
         self.assertEqual(mock_ssl_context.call_count, 2)  # One for server, one for client
 
-        # Verify load_cert_chain was called on the server context
+        # Verify load_cert_chain was called on the sontexts
         mock_server_context.load_cert_chain.assert_called_once_with(cert.tls_cert_file, cert.tls_key_file)
+        mock_client_context.load_cert_chain.assert_called_once_with(cert.tls_cert_file, cert.tls_key_file)
 
-        # Verify CA certificate loading on client context
+
+        # Verify CA certificate loading on contexts
+        mock_server_context.load_verify_locations.assert_called_once_with(cert.CA_cert_file)
         mock_client_context.load_verify_locations.assert_called_once_with(cert.CA_cert_file)
 
     @patch("src.utils.certificates.subprocess.run")
-    def test_generate_ssl_cert_command(self, mock_subprocess):
+    @patch("src.utils.certificates.tempfile.NamedTemporaryFile")
+    def test_generate_ssl_cert_command(self, mock_tempfile, mock_subprocess):
+        # Set up the mock for NamedTemporaryFile
+        mock_tempfile_instance = mock_tempfile.return_value.__enter__.return_value
+        mock_tempfile_instance.name = "/tmp/test_san_config"
+
+        # Get the OpenSSL path
         openssl_path = shutil.which("openssl")
-        generate_ssl_cert("test_cert.pem", "test_key.pem", "test_csr.pem", "ca_cert.pem", "ca_key.pem", "TestCN", "127.0.0.1")
+
+        # Call the function being tested
+        generate_ssl_cert("test_cert.pem", "test_key.pem", "test_csr.pem", "ca_cert.pem", "ca_key.pem", "TestCN",
+                          "127.0.0.1")
 
         # Check subprocess command for generating CSR and key
         mock_subprocess.assert_any_call(
@@ -69,17 +81,23 @@ class TestCertificatesFunctions(unittest.TestCase):
             shell=False
         )
 
-        # Check subprocess command for signing with CA
+        # Check subprocess command for signing with CA (with SAN config file)
         mock_subprocess.assert_any_call(
             [
                 openssl_path, "x509", "-req", "-in", "test_csr.pem",
                 "-CA", "ca_cert.pem", "-CAkey", "ca_key.pem",
                 "-CAcreateserial", "-out", "test_cert.pem",
-                "-days", "365", "-sha256"
+                "-days", "365", "-sha256",
+                "-extfile", "/tmp/test_san_config",
+                "-extensions", "v3_ca"
             ],
             check=True,
             shell=False
         )
+
+        # Verify that the NamedTemporaryFile was called with delete=False
+        mock_tempfile.assert_called_once_with(delete=False)
+
 
     def test_generate_ssl_cert(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))

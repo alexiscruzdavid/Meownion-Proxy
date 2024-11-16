@@ -6,6 +6,7 @@ from . import start_tor as tor
 import threading
 import logging
 import signal
+import os
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
@@ -37,7 +38,6 @@ class OnionRelay:
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
 
-        self.certificates.start()
         incoming_connections_thread = threading.Thread(target=self.accept_incoming_connections, daemon=True)
         with self.threads_lock:
             self.threads.append(incoming_connections_thread)
@@ -170,6 +170,13 @@ class OnionRelay:
         with self.connections_lock:
             for connection in self.connections.values():
                 connection.close()
+        for file_path in [
+            self.certificates.tls_cert_file, self.certificates.tls_key_file,
+            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        ]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
         logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")
 
     def __str__(self):
