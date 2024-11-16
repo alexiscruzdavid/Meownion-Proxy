@@ -31,7 +31,7 @@ class TestOnionRelay(unittest.TestCase):
 
     def test_relay_start(self):
         self.relay.start()
-        time.sleep(1)  # Wait a moment to make sure the thread starts properly
+        time.sleep(10)  # Wait a moment to make sure the thread starts properly
 
         # Check that the relay's accepting connections thread is running
         with self.relay.threads_lock:

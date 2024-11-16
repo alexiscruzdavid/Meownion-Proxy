@@ -37,6 +37,10 @@ class OnionRelay:
     def start(self):
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
+        signal.signal(signal.SIGHUP, self.shutdown)
+        signal.signal(signal.SIGQUIT, self.shutdown)
+        signal.signal(signal.SIGUSR1, self.shutdown)
+        signal.signal(signal.SIGUSR2, self.shutdown)
 
         incoming_connections_thread = threading.Thread(target=self.accept_incoming_connections, daemon=True)
         with self.threads_lock:
@@ -63,6 +67,7 @@ class OnionRelay:
 
                 except ssl.SSLError as e:
                     logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
+                # Might be closing the sock
                 finally:
                     if tls_client_sock:
                         tls_client_sock.close()
@@ -134,6 +139,19 @@ class OnionRelay:
     def upload_state(self):
         '''
         Upload relay state to directory server
+        Request HTTP Format:
+        POST /upload_state HTTP/1.1
+            Host:
+            Content-Type: application/json
+            {
+                'ip': str,
+                'port': int,
+                'onion_key',
+                'long_term_key',
+                'signature'
+            }
+
+
         '''
         pass
 
@@ -141,6 +159,9 @@ class OnionRelay:
         '''
         Get states from directory server and update connections/states to relays
         If there is no connection already, assume you act as server
+
+        Request HTTP Format:
+
         '''
         pass
 
@@ -161,6 +182,13 @@ class OnionRelay:
         pass
 
     def shutdown(self, signum=None, frame=None):
+        for file_path in [
+            self.certificates.tls_cert_file, self.certificates.tls_key_file, self.certificates.tls_csr_file,
+            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        ]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
         logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
         self.shutdown_flag.set()
         with self.threads_lock:
