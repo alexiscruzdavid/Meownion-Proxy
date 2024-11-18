@@ -7,10 +7,12 @@ import threading
 import logging
 import signal
 import os
+from tor_header import DefaultTorHeaderWrapper
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
-
+RELAY_SERVER_PORT = 31200
+RELAY_CLIENT_PORT = 44000
 
 TAGS = ['start', 'connection', 'circuit']
 
@@ -44,13 +46,37 @@ class OnionRelay:
         
         server_side_thread = threading.Thread(target=self.server_side_component, daemon=True)
         client_side_thread = threading.Thread(target=self.client_side_component, daemon=True)
+        server_side_thread.start()
+        client_side_thread.start()
 
         
 
 
     def client_side_component(self):
+        while not self.shutdown_flag.is_set():
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # listen on own port for any incoming messages 
+            client_listening_address = ('localhost', RELAY_CLIENT_PORT)
+            
+            client_socket.connect(client_listening_address)
+            
+            data = ''
+            while True:
+                tmp = client_socket.recv(1024).decode('utf-8')
+                if not tmp:
+                    break
+                data += tmp
+            
+            if data:
+                logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{RELAY_CLIENT_PORT}")
+                tor_message = DefaultTorHeaderWrapper()
+                tor_message.unpackMessage(data)
+                
+                
+            
+            client_socket.close()
         
-        pass
 
     def server_side_component(self):
         incoming_connections_thread = threading.Thread(target=self.accept_incoming_connections, daemon=True)
