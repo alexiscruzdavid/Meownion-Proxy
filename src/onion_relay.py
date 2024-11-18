@@ -1,11 +1,15 @@
+import time
+
 from src.utils.certificates import Certificates
-from typing import Tuple
+from src.onion_directory import OnionDirectory
+from typing import Tuple, List
 import socket
 import ssl
 from . import start_tor as tor
 import threading
 import logging
 import signal
+import requests
 import os
 
 UPLOAD_INTERVAL = 60
@@ -13,15 +17,17 @@ DOWNLOAD_INTERVAL = 60
 
 
 TAGS = ['start', 'connection', 'circuit']
+HEARTBEAT_INTERVAL = 60
 
 
 
 class OnionRelay:
-    def __init__(self, name: str, ip: str, port:int):
+    def __init__(self, name: str, ip: str, port: int, directory_ip: str, directory_port: int):
         self.name = name
         self.ip = ip
         self.port = port
         self.certificates = Certificates(name, ip)
+        self.directory = (directory_ip, directory_port)
         self.connections = {}
         self.connections_lock = threading.Lock()
         self.circuits = {}
@@ -35,109 +41,27 @@ class OnionRelay:
         logging.info(f"{self.tags['start']} initialized at {self.ip}:{self.port}")
 
     def start(self):
-        signal.signal(signal.SIGINT, self.shutdown)
-        signal.signal(signal.SIGTERM, self.shutdown)
-        signal.signal(signal.SIGHUP, self.shutdown)
-        signal.signal(signal.SIGQUIT, self.shutdown)
-        signal.signal(signal.SIGUSR1, self.shutdown)
-        signal.signal(signal.SIGUSR2, self.shutdown)
+        self.upload_state()
+        self.update_connections()
+        self.threads.append(threading.Thread(target=self.heartbeat, daemon=True))
+        # Make heartbeat a timed thread or something similar
 
-        incoming_connections_thread = threading.Thread(target=self.accept_incoming_connections, daemon=True)
-        with self.threads_lock:
-            self.threads.append(incoming_connections_thread)
-        incoming_connections_thread.start()
 
 
     def accept_incoming_connections(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
-            server_sock.bind((self.ip, self.port))
-            server_sock.listen(tor.MAX_RELAYS + tor.MAX_CLIENTS)
-            logging.info(f"{self.tags['connection']} listening on {self.ip}:{self.port}")
-
-            while not self.shutdown_flag.is_set():
-                client_sock, client_addr = server_sock.accept()
-                tls_client_sock = None
-                logging.info(f"{self.tags['connection']} accepted connection from {client_addr}")
-                try:
-                    tls_client_sock = self.certificates.server_context.wrap_socket(client_sock, server_side=True)
-                    tls_client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(tls_client_sock, client_addr), daemon=True)
-                    with self.threads_lock:
-                        self.threads.append(tls_client_sock_thread)
-                    tls_client_sock_thread.start()
-
-                except ssl.SSLError as e:
-                    logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
-                # Might be closing the sock
-                finally:
-                    if tls_client_sock:
-                        tls_client_sock.close()
+        pass
 
     def handle_incoming_connection(self, tls_client_sock: ssl.SSLSocket, client_addr: Tuple[str, int]):
-        '''
-        TODO: Set up forwarding to next relay which will require locking on each socket
-        '''
-        with self.connections_lock:
-            self.connections[client_addr] = tls_client_sock
-
-        try:
-            while not self.shutdown_flag.is_set():
-                data = tls_client_sock.recv(1024)
-                if not data:
-                    break
-                logging.info(f"{self.tags['connection']} received from {client_addr}: {data.decode()}")
-                tls_client_sock.sendall(data)  # Echo the data back
-        except Exception as e:
-            logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
-        finally:
-            with self.connections_lock:
-                self.connections.pop(client_addr)
-                # Might need to retry connection, or just wait for handler
-            tls_client_sock.close()
-            logging.info(f"{self.tags['connection']} closed connection with {client_addr}")
+        pass
 
     def start_outgoing_connection(self, ip: str, port: int):
-        with self.connections_lock:
-            if (ip, port) in self.connections:
-                logging.info(f"{self.tags['connection']} already connected to {ip}:{port}")
-                return
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
-            server_sock.connect((ip, port))
-            tls_server_sock = self.certificates.client_context.wrap_socket(server_sock, server_hostname=ip)
-            with self.connections_lock:
-                self.connections[(ip, port)] = tls_server_sock
-            tls_client_sock_thread = threading.Thread(target=self.handle_outgoing_connection, args=(tls_server_sock, ip, port), daemon=True)
-            tls_client_sock_thread.start()
-            logging.info(f"{self.tags['connection']} started connection to {ip}:{port}")
+        pass
 
     def handle_outgoing_connection(self, tls_sock: ssl.SSLSocket, ip: str, port: int):
-        """
-        TODO: Do not close after sending initial data and then receiving
-        """
-        try:
-            # Send initial message
-            tls_sock.sendall(b"Hello from the client!")
-
-            # Receive and process messages
-            while True:
-                try:
-                    data = tls_sock.recv(1024)
-                    if not data:
-                        logging.info(f"{self.tags['connection']} received no data from {ip}:{port}")
-                        break
-                    logging.info(f"{self.tags['connection']} received from {ip}:{port}: {data.decode()}")
-                except (ssl.SSLError, socket.timeout) as e:
-                    logging.error(f"{self.tags['connection']} error with {ip}:{port}: {e}")
-                    break
-        except Exception as e:
-            logging.error(f"{self.tags['connection']} error with {ip}:{port}: {e}")
-        finally:
-            with self.connections_lock:
-                self.connections.pop((ip, port))
-            tls_sock.close()
-            logging.info(f"{self.tags['connection']} closed connection with {ip}:{port}")
+        pass
 
     def upload_state(self):
-        '''
+        """
         Upload relay state to directory server
         Request HTTP Format:
         POST /upload_state HTTP/1.1
@@ -150,12 +74,23 @@ class OnionRelay:
                 'long_term_key',
                 'signature'
             }
+        """
+        url = f"http://{self.directory[0]}:{self.directory[1]}/upload_state"
+        data = {
+            'ip': self.ip,
+            'port': self.port,
+            'onion_key': self.certificates.get_onion_key(),
+            'long_term_key': self.certificates.get_identity_key(),
+            'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key()}".encode()).hex()
+        }
+        response = requests.post(url, json=data)
+        if response.status_code == 200:
+            logging.info(f"{self.tags['start']} Successfully uploaded state to directory")
+        else:
+            logging.error(f"{self.tags['start']} Failed to upload state to directory: {response.text}")
 
 
-        '''
-        pass
-
-    def download_states(self) -> Tuple[str, int]:
+    def update_connections(self) -> None:
         '''
         Get states from directory server and update connections/states to relays
         If there is no connection already, assume you act as server
@@ -163,14 +98,34 @@ class OnionRelay:
         Request HTTP Format:
 
         '''
-        pass
+        url = f"http://{self.directory[0]}:{self.directory[1]}/download_states"
+        response = requests.get(url)
+        if response.status_code == 200:
+            logging.info(f"{self.tags['start']} Successfully downloaded states from directory")
+            states = response.json()
 
+            for state in states:
+                ip, port = state['ip'], state['port']
+                if f"{ip}:{port}" not in self.connections:
+                    self.start_outgoing_connection(ip, port)
 
-    def update_connections(self) -> None:
-        '''
-        Update tls connections to relays
-        '''
-        pass
+    def heartbeat(self):
+        """
+        Send heartbeat to directory server at an interval
+        """
+        while True:
+            url = f"http://{self.directory[0]}:{self.directory[1]}/heartbeat"
+            data = {
+                'ip': self.ip,
+                'port': self.port,
+                'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key()}".encode()).hex()
+            }
+            response = requests.post(url, json=data)
+            if response.status_code == 200:
+                logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory")
+            else:
+                logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+            time.sleep(HEARTBEAT_INTERVAL)
 
     def create_circuit(self):
         pass
@@ -181,31 +136,31 @@ class OnionRelay:
     def destroy_circuit(self):
         pass
 
-    def shutdown(self, signum=None, frame=None):
-        for file_path in [
-            self.certificates.tls_cert_file, self.certificates.tls_key_file, self.certificates.tls_csr_file,
-            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
-            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
-        ]:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
-        self.shutdown_flag.set()
-        with self.threads_lock:
-            for thread in self.threads:
-                if thread.is_alive():
-                    thread.join()
-        with self.connections_lock:
-            for connection in self.connections.values():
-                connection.close()
-        for file_path in [
-            self.certificates.tls_cert_file, self.certificates.tls_key_file,
-            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
-            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
-        ]:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")
+    # def shutdown(self, signum=None, frame=None):
+        # for file_path in [
+        #     self.certificates.tls_cert_file, self.certificates.tls_key_file, self.certificates.tls_csr_file,
+        #     self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+        #     self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        # ]:
+        #     if os.path.exists(file_path):
+        #         os.remove(file_path)
+        # logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
+        # self.shutdown_flag.set()
+        # with self.threads_lock:
+        #     for thread in self.threads:
+        #         if thread.is_alive():
+        #             thread.join()
+        # with self.connections_lock:
+        #     for connection in self.connections.values():
+        #         connection.close()
+        # for file_path in [
+        #     self.certificates.tls_cert_file, self.certificates.tls_key_file,
+        #     self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+        #     self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        # ]:
+        #     if os.path.exists(file_path):
+        #         os.remove(file_path)
+        # logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")
 
     def __str__(self):
         return 'IP: {}:{} /nOnion Key: {} /nConnections :{}'.format(self.ip, self.port, self.onion_key, self.connections)

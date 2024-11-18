@@ -5,8 +5,8 @@ import json
 import threading
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from relay_directory import DirectoryServer
-from server import app
+from src.onion_directory import OnionDirectory
+from src.onion_directory_server import app
 
 class MockRelay:
     def __init__(self, ip: str, port: int):

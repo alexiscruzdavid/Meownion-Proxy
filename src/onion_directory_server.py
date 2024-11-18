@@ -1,9 +1,9 @@
 import json
 from flask import Flask, request, jsonify
-from relay_directory import DirectoryServer
+from src.onion_directory import OnionDirectory
 
 app = Flask(__name__)
-directory = DirectoryServer()
+directory = OnionDirectory()
 
 @app.route('/upload_state', methods=['POST'])
 def upload_state():

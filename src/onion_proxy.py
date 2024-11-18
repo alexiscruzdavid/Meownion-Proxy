@@ -1,7 +1,7 @@
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 import socket
-import relay_directory
+import onion_relay
 import ssl
 import sys
 import os
@@ -74,7 +74,7 @@ if __name__ == '__main__':
         message = input('Type in your message ')
         dest_ip = input('Type in your destination ip ')
         print('Sending Message {} to {}'.format(message, dest_ip))
-        circuit = relay_directory.fetch_circuit(src_ip, dest_ip)
+        circuit = onion_relay.fetch_circuit(src_ip, dest_ip)
         byte_cipher_text = encrypt_message_with_circuit(message.encode('iso-8859-1'), circuit)
         print('Your encrypted message is {}'.format(byte_cipher_text.decode('iso-8859-1')))
     

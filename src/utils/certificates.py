@@ -25,6 +25,25 @@ class Certificates:
         self.update_identity_key()
         self.update_onion_key()
 
+    def get_onion_key(self):
+        with open(self.onion_pub_key_file, 'r') as f:
+            return f.read()
+
+    def get_identity_key(self):
+        with open(self.identity_pub_key_file, 'r') as f:
+            return f.read()
+
+    def sign(self, message: bytes) -> bytes:
+        cmd = [
+            "openssl", "dgst", "-sha256", "-sign", self.identity_key_file
+        ]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        proc.stdin.write(message)
+        proc.stdin.close()
+        return proc.stdout.read()
+
+
+
     def update_onion_key(self):
         """
         For period regeneration

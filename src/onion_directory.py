@@ -1,5 +1,3 @@
-# the code for the database holding the relays and their symmetric keys
-
 import time
 import threading
 from dataclasses import dataclass
@@ -7,17 +5,6 @@ from typing import Dict, List, Optional
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 import os
-
-# class CircuitNode:
-#     def __init__(self, node_ip, node_key):
-#         self.node_ip = node_ip
-#         self.node_key = node_key
-        
-# # retrieve a circuit list comprised of CircuitNodes
-# def fetch_circuit(src_ip, dest_ip):
-#     first_node = CircuitNode(src_ip, os.urandom(32))
-#     last_node = CircuitNode(dest_ip, os.urandom(32))
-#     return [first_node, last_node]
 
 @dataclass
 class RelayState:
@@ -27,8 +14,9 @@ class RelayState:
     last_heartbeat: float
     long_term_key: str  # Long-term public key in PEM format
 
-class DirectoryServer:
-    def __init__(self, heartbeat_timeout: int = 30):
+class OnionDirectory:
+    """Interface to create directory running on flask server for storing relay states"""
+    def __init__(self, heartbeat_timeout: int = 130):
         self.relays: Dict[str, RelayState] = {}  # ip:port -> RelayState
         self.heartbeat_timeout = heartbeat_timeout
         self.lock = threading.Lock()
