@@ -37,9 +37,15 @@ class OnionRelay:
     def start(self):
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
+        signal.signal(signal.SIGHUP, self.shutdown)
+        signal.signal(signal.SIGQUIT, self.shutdown)
+        signal.signal(signal.SIGUSR1, self.shutdown)
+        signal.signal(signal.SIGUSR2, self.shutdown)
         
         server_side_thread = threading.Thread(target=self.server_side_component, daemon=True)
         client_side_thread = threading.Thread(target=self.client_side_component, daemon=True)
+
+        
 
 
     def client_side_component(self):
@@ -142,6 +148,19 @@ class OnionRelay:
     def upload_state(self):
         '''
         Upload relay state to directory server
+        Request HTTP Format:
+        POST /upload_state HTTP/1.1
+            Host:
+            Content-Type: application/json
+            {
+                'ip': str,
+                'port': int,
+                'onion_key',
+                'long_term_key',
+                'signature'
+            }
+
+
         '''
         pass
 
@@ -149,6 +168,9 @@ class OnionRelay:
         '''
         Get states from directory server and update connections/states to relays
         If there is no connection already, assume you act as server
+
+        Request HTTP Format:
+
         '''
         pass
 
@@ -169,6 +191,13 @@ class OnionRelay:
         pass
 
     def shutdown(self, signum=None, frame=None):
+        for file_path in [
+            self.certificates.tls_cert_file, self.certificates.tls_key_file, self.certificates.tls_csr_file,
+            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        ]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
         logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
         self.shutdown_flag.set()
         with self.threads_lock:
