@@ -7,7 +7,8 @@ import threading
 import logging
 import signal
 import os
-from tor_header import DefaultTorHeaderWrapper
+from tor_header import DefaultTorHeaderWrapper, RelayTorHeaderWrapper
+from tor_encryption import decrypt_message
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
@@ -19,10 +20,11 @@ TAGS = ['start', 'connection', 'circuit']
 
 
 class OnionRelay:
-    def __init__(self, name: str, ip: str, port:int):
+    def __init__(self, name: str, ip: str, port:int, key:bytes):
         self.name = name
         self.ip = ip
         self.port = port
+        self.key = key
         self.certificates = Certificates(name, ip)
         self.connections = {}
         self.connections_lock = threading.Lock()
@@ -70,8 +72,14 @@ class OnionRelay:
             
             if data:
                 logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{RELAY_CLIENT_PORT}")
+                
+                data = decrypt_message(data, self.key)
+                
                 tor_message = DefaultTorHeaderWrapper()
                 tor_message.unpackMessage(data)
+                
+                relay_message = RelayTorHeaderWrapper()
+                relay_message.unpackMessage(tor_message.data)
                 
                 
             

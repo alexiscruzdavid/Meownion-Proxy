@@ -1,11 +1,8 @@
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
 import socket
 import relay_directory
 import ssl
 import sys
-import os
-
+from tor_encryption import encrypt_message_with_circuit
 
 
 def open_tls_connection(src_ip, dest_ip, certfile, keyfile):
@@ -30,23 +27,12 @@ def establish_circuit():
 
 
         
-def encrypt_message(byte_message, key):
-    padder = padding.PKCS7(128).padder()
-    byte_message = padder.update(byte_message) + padder.finalize()
-    iv = os.urandom(16)
-    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-    encryptor = cipher.encryptor()
-    cipher_text = encryptor.update(byte_message) + encryptor.finalize()
-    return cipher_text
+
 
 def handle_user_application():
     pass
     
-def encrypt_message_with_circuit(message, circuit):
-    for circuit_node in circuit:
-        _, node_key = circuit_node.node_ip, circuit_node.node_key
-        message = encrypt_message(message, node_key)
-    return message
+
 
 
 if __name__ == '__main__':
