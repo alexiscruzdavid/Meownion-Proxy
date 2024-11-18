@@ -37,35 +37,42 @@ class OnionRelay:
     def start(self):
         signal.signal(signal.SIGINT, self.shutdown)
         signal.signal(signal.SIGTERM, self.shutdown)
+        
+        server_side_thread = threading.Thread(target=self.server_side_component, daemon=True)
+        client_side_thread = threading.Thread(target=self.client_side_component, daemon=True)
 
+
+    def client_side_component(self):
+        
+        pass
+
+    def server_side_component(self):
         incoming_connections_thread = threading.Thread(target=self.accept_incoming_connections, daemon=True)
         with self.threads_lock:
             self.threads.append(incoming_connections_thread)
         incoming_connections_thread.start()
 
-
     def accept_incoming_connections(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
+        while not self.shutdown_flag.is_set():
+            server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server_sock.bind((self.ip, self.port))
             server_sock.listen(tor.MAX_RELAYS + tor.MAX_CLIENTS)
+            
             logging.info(f"{self.tags['connection']} listening on {self.ip}:{self.port}")
-
-            while not self.shutdown_flag.is_set():
-                client_sock, client_addr = server_sock.accept()
-                tls_client_sock = None
-                logging.info(f"{self.tags['connection']} accepted connection from {client_addr}")
-                try:
-                    tls_client_sock = self.certificates.server_context.wrap_socket(client_sock, server_side=True)
-                    tls_client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(tls_client_sock, client_addr), daemon=True)
-                    with self.threads_lock:
-                        self.threads.append(tls_client_sock_thread)
-                    tls_client_sock_thread.start()
-
-                except ssl.SSLError as e:
-                    logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
-                finally:
-                    if tls_client_sock:
-                        tls_client_sock.close()
+            
+            client_sock, client_addr = server_sock.accept()
+            tls_client_sock = None
+            
+            logging.info(f"{self.tags['connection']} accepted connection from {client_addr}")
+            
+            try:
+                tls_client_sock = self.certificates.server_context.wrap_socket(client_sock, server_side=True)
+                tls_client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(tls_client_sock, client_addr), daemon=True)
+                with self.threads_lock:
+                    self.threads.append(tls_client_sock_thread)
+                tls_client_sock_thread.start()
+            except ssl.SSLError as e:
+                logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
 
     def handle_incoming_connection(self, tls_client_sock: ssl.SSLSocket, client_addr: Tuple[str, int]):
         '''
@@ -74,21 +81,22 @@ class OnionRelay:
         with self.connections_lock:
             self.connections[client_addr] = tls_client_sock
 
+        logging.info(f"{self.tags['connection']} received from {client_addr}")
         try:
             while not self.shutdown_flag.is_set():
                 data = tls_client_sock.recv(1024)
                 if not data:
                     break
-                logging.info(f"{self.tags['connection']} received from {client_addr}: {data.decode()}")
+                
                 tls_client_sock.sendall(data)  # Echo the data back
         except Exception as e:
             logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
-        finally:
-            with self.connections_lock:
-                self.connections.pop(client_addr)
-                # Might need to retry connection, or just wait for handler
-            tls_client_sock.close()
-            logging.info(f"{self.tags['connection']} closed connection with {client_addr}")
+            
+        with self.connections_lock:
+            self.connections.pop(client_addr)
+            # Might need to retry connection, or just wait for handler
+        tls_client_sock.close()
+        logging.info(f"{self.tags['connection']} closed connection with {client_addr}")
 
     def start_outgoing_connection(self, ip: str, port: int):
         with self.connections_lock:
