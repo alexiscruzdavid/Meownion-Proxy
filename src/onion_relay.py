@@ -81,7 +81,28 @@ class OnionRelay:
                 relay_message = RelayTorHeaderWrapper()
                 relay_message.unpackMessage(tor_message.data)
                 
+                curr_circuit = self.circuits[relay_message.circID]
                 
+                # if we have reached the destination (i.e. if this node is the destination)
+                if curr_circuit[-1].node_ip == self.ip:
+                    # TODO udpate logic here
+                    print(relay_message.data.decode('utf-8'))
+                    break
+                
+                
+                # find next relay and then send the data to them
+                next_relay = None
+                for index, circ_node in enumerate(curr_circuit):
+                    if circ_node.node_ip == self.ip:
+                        # once we reach the current node ip, then the next node ip is the next relay
+                        next_relay = curr_circuit[index+1]
+                        
+                # make a relay socket to send to the next relay
+                relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                next_relay_address = (next_relay.node_ip, RELAY_SERVER_PORT) 
+
+                relay_socket.connect(next_relay_address)
+                relay_socket.sendall(relay_message.data)                
             
             client_socket.close()
         

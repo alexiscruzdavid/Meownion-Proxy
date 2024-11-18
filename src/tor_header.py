@@ -5,6 +5,13 @@ CMD_ENUM = {
     'CREATE': 0,
     'EXTEND': 1,
     'DESTROY': 2,
+    'RELAY': 3,
+}
+
+RELAY_CMD_ENUM = {
+    'RELAY_DATA': 0,
+    'EXTEND': 1,
+    'DESTROY': 2,
 }
 
 class DefaultTorHeaderWrapper():
@@ -44,14 +51,45 @@ class DefaultTorHeaderWrapper():
         
     
 class RelayTorHeaderWrapper():
-    def __init__(self, circID: int, relay: str, streamID: int, digest: int, len: int, cmd: str, data: bytearray):
+    def __init__(self):
+        self.circID = None
+        self.relay = None
+        self.streamID = None
+        self.digest = None
+        self.data_len = None
+        self.cmd = None
+        self.data = None
+
+    
+    def __init__(self, circID: int, relay: str, streamID: int, digest: int, data_len: int, cmd: str, data: bytearray):
         self.circID = circID
         self.relay = relay
         self.streamID = streamID
         self.digest = digest
-        self.len = len
+        self.data_len = len
         self.cmd = cmd
         self.data = data
+
+    def createMessage(self):
+        message = bytearray()
+        packed_circID = struct.pack('<H', self.circID)
+        packed_relay = struct.pack('<B', self.relay)
+        packed_streamID = struct.pack('<H', self.streamID)
+        # digest will be 8 bytes in our implementation due to python lack of unpacking 6 byte numbers
+        packed_digest = struct.pack('<Q', self.digest)
+        packed_data_len = struct.pack('<H', self.data_len)
+        packed_cmd = struct.pack('<B', self.cmd)
+    
+        
+        message.append(packed_circID)
+        message.append(packed_cmd)
+        message.append(packed_relay)
+        message.append(packed_streamID)
+        message.append(packed_digest)
+        message.append(packed_data_len)
+        message.append(packed_cmd)
+        message.extend(self.data)
+        return message
 
     def unpackMessage(self, data: bytearray):
         self.circID = struct.unpack('<H', data[:2])
@@ -59,9 +97,8 @@ class RelayTorHeaderWrapper():
         self.streamID = struct.unpack('<H', data[3:5])
         # digest will be 8 bytes in our implementation due to python lack of unpacking 6 byte numbers
         self.digest = struct.unpack('<Q', data[5:13])
-        self.len = struct.unpack('<H', data[13:15])
+        self.data_len = struct.unpack('<H', data[13:15])
         self.cmd = struct.unpack('<B', data[15:16])
-        self.data_len = struct.unpack('<H', data[16:18])
         self.data = data[18:]
     
     

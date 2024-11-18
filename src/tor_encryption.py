@@ -25,9 +25,15 @@ def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
     
     return byte_message
 
-def encrypt_message_with_circuit(message, circuit):
+def encrypt_message_with_circuit(message, circuit, circID, streamID):
     for circuit_node in circuit:
         _, node_key = circuit_node.node_ip, circuit_node.node_key
         
-        message = encrypt_message(message, node_key)
+        curr_relay_header = RelayTorHeaderWrapper(circID, 'RELAY_DATA', streamID, 0, len(message), 'RELAY', message)
+        relay_message = curr_relay_header.create_message()
+        
+        curr_tor_header = DefaultTorHeaderWrapper(circID, 'RELAY', len(relay_message), relay_message)
+        tor_message = curr_tor_header.create_message()
+        
+        message = encrypt_message(tor_message, node_key)    
     return message
