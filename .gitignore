@@ -18,3 +18,12 @@ env/
 .DS_Store
 
 certs/ca_cert.srl
+
+# Ignore identity , onoion, and tls fi
+certs/identity/*.key
+certs/identity/*.pem
+certs/onion/*.key
+certs/onion/*.pem
+certs/tls/*.key
+certs/tls/*.pem
+certs/tls/*.csr

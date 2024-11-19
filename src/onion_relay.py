@@ -22,7 +22,7 @@ HEARTBEAT_INTERVAL = 60
 
 
 class OnionRelay:
-    def __init__(self, name: str, ip: str, port: int, directory_ip: str, directory_port: int):
+    def __init__(self, name: str, ip: str, port: int, directory_ip: str = "127.0.0.1", directory_port: int = 8001):
         self.name = name
         self.ip = ip
         self.port = port
@@ -60,7 +60,7 @@ class OnionRelay:
     def handle_outgoing_connection(self, tls_sock: ssl.SSLSocket, ip: str, port: int):
         pass
 
-    def upload_state(self):
+    def upload_state(self) -> bool:
         """
         Upload relay state to directory server
         Request HTTP Format:
@@ -86,9 +86,18 @@ class OnionRelay:
         response = requests.post(url, json=data)
         if response.status_code == 200:
             logging.info(f"{self.tags['start']} Successfully uploaded state to directory")
+            return True
         else:
             logging.error(f"{self.tags['start']} Failed to upload state to directory: {response.text}")
+            return False
 
+    def download_states(self) -> List[dict] | None:
+        url = f"http://{self.directory[0]}:{self.directory[1]}/download_states"
+        response = requests.get(url)
+        if response.status_code == 200:
+            logging.info(f"{self.tags['start']} Successfully downloaded states from directory")
+            return response.json()
+        return None
 
     def update_connections(self) -> None:
         '''
@@ -98,34 +107,39 @@ class OnionRelay:
         Request HTTP Format:
 
         '''
-        url = f"http://{self.directory[0]}:{self.directory[1]}/download_states"
-        response = requests.get(url)
-        if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully downloaded states from directory")
-            states = response.json()
+        states = self.download_states()
+        if states is None:
+            logging.error(f"{self.tags['start']} Failed to download states from directory")
+            return
+        for state in states:
+            ip, port = state['ip'], state['port']
+            if f"{ip}:{port}" not in self.connections:
+                self.start_outgoing_connection(ip, port)
 
-            for state in states:
-                ip, port = state['ip'], state['port']
-                if f"{ip}:{port}" not in self.connections:
-                    self.start_outgoing_connection(ip, port)
-
-    def heartbeat(self):
+    def heartbeat_periodic(self):
         """
         Send heartbeat to directory server at an interval
         """
         while True:
-            url = f"http://{self.directory[0]}:{self.directory[1]}/heartbeat"
-            data = {
-                'ip': self.ip,
-                'port': self.port,
-                'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key()}".encode()).hex()
-            }
-            response = requests.post(url, json=data)
-            if response.status_code == 200:
-                logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory")
-            else:
-                logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+            self.heartbeat()
             time.sleep(HEARTBEAT_INTERVAL)
+
+    def heartbeat(self) -> bool:
+        url = f"http://{self.directory[0]}:{self.directory[1]}/heartbeat"
+        data = {
+            'ip': self.ip,
+            'port': self.port,
+            'signature': self.certificates.sign(
+                f"{self.ip}{self.port}".encode()).hex()
+        }
+        response = requests.post(url, json=data)
+        if response.status_code == 200:
+            logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory")
+            return True
+        else:
+            logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+            return False
+
 
     def create_circuit(self):
         pass
@@ -137,30 +151,7 @@ class OnionRelay:
         pass
 
     # def shutdown(self, signum=None, frame=None):
-        # for file_path in [
-        #     self.certificates.tls_cert_file, self.certificates.tls_key_file, self.certificates.tls_csr_file,
-        #     self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
-        #     self.certificates.onion_key_file, self.certificates.onion_pub_key_file
-        # ]:
-        #     if os.path.exists(file_path):
-        #         os.remove(file_path)
-        # logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
-        # self.shutdown_flag.set()
-        # with self.threads_lock:
-        #     for thread in self.threads:
-        #         if thread.is_alive():
-        #             thread.join()
-        # with self.connections_lock:
-        #     for connection in self.connections.values():
-        #         connection.close()
-        # for file_path in [
-        #     self.certificates.tls_cert_file, self.certificates.tls_key_file,
-        #     self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
-        #     self.certificates.onion_key_file, self.certificates.onion_pub_key_file
-        # ]:
-        #     if os.path.exists(file_path):
-        #         os.remove(file_path)
-        # logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")
+    #     pass
 
     def __str__(self):
         return 'IP: {}:{} /nOnion Key: {} /nConnections :{}'.format(self.ip, self.port, self.onion_key, self.connections)

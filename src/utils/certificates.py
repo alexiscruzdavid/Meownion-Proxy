@@ -4,6 +4,10 @@ import subprocess
 import sys
 import ssl
 import tempfile
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.backends import default_backend
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -34,13 +38,18 @@ class Certificates:
             return f.read()
 
     def sign(self, message: bytes) -> bytes:
-        cmd = [
-            "openssl", "dgst", "-sha256", "-sign", self.identity_key_file
-        ]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        proc.stdin.write(message)
-        proc.stdin.close()
-        return proc.stdout.read()
+        with open(self.identity_key_file, "rb") as key_file:
+            private_key = load_pem_private_key(key_file.read(), password=None, backend=default_backend())
+
+        signature = private_key.sign(
+            message,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return signature
 
 
 

@@ -85,7 +85,7 @@ class OnionDirectory:
                 return False
             
             # Verify signature
-            message = f"{ip}{port}{time.time()}".encode()
+            message = f"{ip}{port}".encode()
             if not self.verify_signature(message, signature, self.relays[relay_id].long_term_key):
                 return False
                 
