@@ -1,6 +1,6 @@
 import json
 from flask import Flask, request, jsonify
-from src.onion_directory import OnionDirectory
+from onion_directory import OnionDirectory
 
 app = Flask(__name__)
 directory = OnionDirectory()
