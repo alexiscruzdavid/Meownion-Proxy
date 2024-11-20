@@ -3,37 +3,29 @@ import relay_directory
 import ssl
 import sys
 from tor_encryption import encrypt_message_with_circuit
+from onion_relay import OnionRelay
+from tor_header import DefaultTorHeaderWrapper, RelayTorHeaderWrapper
+from tor_encryption import decrypt_message
 
 
-def open_tls_connection(src_ip, dest_ip, certfile, keyfile):
-    server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    # the long term identiy key is the keyfile
-    server_context.load_cert_chain(certfile, keyfile)
-    
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.bind((src_ip, 8443))
-    server_sock.listen(5)
-    
-    print('Onion Proxy listening on port 8443...')
-    
+def sender(src_ip, certfile, keyfile):    
     while True:
-        client_sock, client_addr = server_sock.accept()
-        print('Received connection from {}'.format(client_addr))
+        message = input('Type in your message ')
+        dest_ip = input('Type in your destination ip ')
+        print('Sending Message {} to {}'.format(message, dest_ip))
+        circuit = relay_directory.fetch_circuit(src_ip, dest_ip)
+
+        cipher_text = encrypt_message_with_circuit(message.encode('utf-8'), circuit, 1, 1)
+
+
+        current_relay = OnionRelay(name=src_ip, ip=src_ip, port=circuit[0].node_port, key=circuit[0].node_key)
+        current_relay.start()
         
-        tls_server_sock = server_context.wrap_socket(client_sock, server_side=True)
-
-def establish_circuit():
-    pass
-
-
-        
-
-
-def handle_user_application():
-    pass
+        # next_relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # next_relay_address = (circuit[1].node_ip, RELAY_SERVER_PORT)
     
-
-
+        current_relay.relay_message_to_next(circuit[1].node_ip, circuit[1].node_port, cipher_text)
+    
 
 if __name__ == '__main__':
     print('Starting MeOwnion Proxy...')
@@ -41,28 +33,21 @@ if __name__ == '__main__':
     print("( o.o )  ")
     print(" > ^ <   ")
     
-    src_ip, certfile, keyfile = None, None, None
-    if len(sys.argv) > 2:
-        src_ip, certfile, keyfile = sys.argv[1:]
-    elif len(sys.argv) > 1:
-        src_ip = sys.argv[1]
-        certfile = 'relay_cert.pem'
-        keyfile = 'relay_key.pem'
-    else:
-        print('Help Description: Create an onion proxy')
-        print('format: python3 onion_proxy src_ip certfile keyfile')
-        exit(1)
+    # hard coding inputs for testing purposes
+    src_ip, certfile, keyfile = '152.3.53.250', 'certs/ca_cert.pem', 'certs/ca_key.key'
+    
+    # if len(sys.argv) > 2:
+    #     src_ip, certfile, keyfile = sys.argv[1:]
+    # elif len(sys.argv) > 1:
+    #     src_ip = sys.argv[1]
+    #     certfile = 'relay_cert.pem'
+    #     keyfile = 'relay_key.pem'
+    # else:
+    #     print('Help Description: Create an onion proxy')
+    #     print('format: python3 onion_proxy src_ip certfile keyfile')
+    #     exit(1)
 
     print('The chosen onion proxy ip is {}'.format(src_ip))
+    sender(src_ip, certfile, keyfile)
     
-    
-    while True:
-        message = input('Type in your message ')
-        dest_ip = input('Type in your destination ip ')
-        print('Sending Message {} to {}'.format(message, dest_ip))
-        circuit = relay_directory.fetch_circuit(src_ip, dest_ip)
-        byte_cipher_text = encrypt_message_with_circuit(message.encode('iso-8859-1'), circuit)
-        print('Your encrypted message is {}'.format(byte_cipher_text.decode('iso-8859-1')))
-    
-    
-    
+

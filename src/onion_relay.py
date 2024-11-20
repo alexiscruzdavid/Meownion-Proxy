@@ -1,8 +1,7 @@
-from src.utils.certificates import Certificates
+from utils.certificates import Certificates
 from typing import Tuple
 import socket
 import ssl
-from . import start_tor as tor
 import threading
 import logging
 import signal
@@ -12,8 +11,9 @@ from tor_encryption import decrypt_message
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
-RELAY_SERVER_PORT = 31200
-RELAY_CLIENT_PORT = 44000
+NUMER_OF_RELAYS = 5
+MAX_RELAYS = 30
+MAX_CLIENTS = 30
 
 TAGS = ['start', 'connection', 'circuit']
 
@@ -33,6 +33,8 @@ class OnionRelay:
         self.threads = []
         self.threads_lock = threading.Lock()
         self.tags = {}
+        self.messages = []
+        self.messages_lock = threading.Lock()
         for tag in TAGS:
             self.tags[tag] = f"[{tag.upper()}] : OnionRelay {self.name} :"
 
@@ -47,64 +49,23 @@ class OnionRelay:
         signal.signal(signal.SIGUSR2, self.shutdown)
         
         server_side_thread = threading.Thread(target=self.server_side_component, daemon=True)
-        client_side_thread = threading.Thread(target=self.client_side_component, daemon=True)
+        # client_side_thread = threading.Thread(target=self.client_side_component, daemon=True)
         server_side_thread.start()
-        client_side_thread.start()
+        # client_side_thread.start()
 
         
 
-
-    def client_side_component(self):
+    # originally called client side component
+    # the method for sending messages that must be relayed
+    def relay_message_to_next(self, next_relay_ip, next_relay_port, relay_message_data):
         while not self.shutdown_flag.is_set():
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{self.port}")
             
-            # listen on own port for any incoming messages 
-            client_listening_address = ('localhost', RELAY_CLIENT_PORT)
-            
-            client_socket.connect(client_listening_address)
-            
-            data = ''
-            while True:
-                tmp = client_socket.recv(1024).decode('utf-8')
-                if not tmp:
-                    break
-                data += tmp
-            
-            if data:
-                logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{RELAY_CLIENT_PORT}")
-                
-                data = decrypt_message(data, self.key)
-                
-                tor_message = DefaultTorHeaderWrapper()
-                tor_message.unpackMessage(data)
-                
-                relay_message = RelayTorHeaderWrapper()
-                relay_message.unpackMessage(tor_message.data)
-                
-                curr_circuit = self.circuits[relay_message.circID]
-                
-                # if we have reached the destination (i.e. if this node is the destination)
-                if curr_circuit[-1].node_ip == self.ip:
-                    # TODO udpate logic here
-                    print(relay_message.data.decode('utf-8'))
-                    break
-                
-                
-                # find next relay and then send the data to them
-                next_relay = None
-                for index, circ_node in enumerate(curr_circuit):
-                    if circ_node.node_ip == self.ip:
-                        # once we reach the current node ip, then the next node ip is the next relay
-                        next_relay = curr_circuit[index+1]
-                        
-                # make a relay socket to send to the next relay
-                relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                next_relay_address = (next_relay.node_ip, RELAY_SERVER_PORT) 
-
-                relay_socket.connect(next_relay_address)
-                relay_socket.sendall(relay_message.data)                
-            
-            client_socket.close()
+            next_relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            next_relay_address = (next_relay_ip, next_relay_port)
+            next_relay_socket.connect(next_relay_address)
+            next_relay_socket.sendall(relay_message_data)                            
+            next_relay_socket.close()
         
 
     def server_side_component(self):
@@ -116,8 +77,10 @@ class OnionRelay:
     def accept_incoming_connections(self):
         while not self.shutdown_flag.is_set():
             server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # bind the socket to own ip and listen for incoming connections
             server_sock.bind((self.ip, self.port))
-            server_sock.listen(tor.MAX_RELAYS + tor.MAX_CLIENTS)
+            server_sock.listen(MAX_RELAYS + MAX_CLIENTS)
             
             logging.info(f"{self.tags['connection']} listening on {self.ip}:{self.port}")
             
@@ -126,14 +89,14 @@ class OnionRelay:
             
             logging.info(f"{self.tags['connection']} accepted connection from {client_addr}")
             
-            try:
-                tls_client_sock = self.certificates.server_context.wrap_socket(client_sock, server_side=True)
-                tls_client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(tls_client_sock, client_addr), daemon=True)
-                with self.threads_lock:
-                    self.threads.append(tls_client_sock_thread)
-                tls_client_sock_thread.start()
-            except ssl.SSLError as e:
-                logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
+            
+            tls_client_sock = self.certificates.server_context.wrap_socket(client_sock, server_side=True)
+            tls_client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(tls_client_sock, client_addr), daemon=True)
+            with self.threads_lock:
+                self.threads.append(tls_client_sock_thread)
+            tls_client_sock_thread.start()
+            # except ssl.SSLError as e:
+            #     logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
 
     def handle_incoming_connection(self, tls_client_sock: ssl.SSLSocket, client_addr: Tuple[str, int]):
         '''
@@ -144,12 +107,43 @@ class OnionRelay:
 
         logging.info(f"{self.tags['connection']} received from {client_addr}")
         try:
+            data = bytes()
             while not self.shutdown_flag.is_set():
-                data = tls_client_sock.recv(1024)
+                data += tls_client_sock.recv(1024)
                 if not data:
                     break
                 
-                tls_client_sock.sendall(data)  # Echo the data back
+            
+            if data:
+                data = decrypt_message(data, self.key)
+                
+                tor_message = DefaultTorHeaderWrapper()
+                tor_message.unpackMessage(data)
+                
+                relay_message = RelayTorHeaderWrapper()
+                relay_message.unpackMessage(tor_message.data)
+            
+                curr_circuit = self.circuits[relay_message.circID]
+                
+                # if we have reached the destination (i.e. if this node is the destination)
+                if curr_circuit[-1].node_ip == self.ip:
+                    # TODO udpate logic here
+                    print(relay_message.data.decode('utf-8'))
+                else:    
+                    # find next relay and then send the data to them
+                    next_relay = None
+                    for index, circ_node in enumerate(curr_circuit):
+                        if circ_node.node_ip == self.ip:
+                            # once we reach the current node ip, then the next node ip is the next relay
+                            next_relay = curr_circuit[index+1]
+                    
+                    
+                    relay_message_thread = threading.Thread(target=self.relay_message_to_next, args=(next_relay.node_ip, next_relay.node_port, relay_message.data), daemon=True)
+                    with self.threads_lock:
+                        self.threads.append(relay_message_thread)
+                    relay_message_thread.start()
+                
+                
         except Exception as e:
             logging.error(f"{self.tags['connection']} error with client {client_addr}: {e}")
             
