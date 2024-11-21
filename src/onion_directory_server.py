@@ -1,6 +1,6 @@
 import json
 from flask import Flask, request, jsonify
-from src.onion_directory import OnionDirectory
+from onion_directory import OnionDirectory
 
 app = Flask(__name__)
 directory = OnionDirectory()
@@ -23,7 +23,7 @@ def upload_state():
         return jsonify({"status": "success"}), 200
     return jsonify({"error": "Invalid signature"}), 401
 
-@app.route('/heartbeat', methods=['POST'])
+@app.route('/heartbeat', methods=['POST']) 
 def heartbeat():
     data = request.json
     if not all(k in data for k in ['ip', 'port', 'signature']):
