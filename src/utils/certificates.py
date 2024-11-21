@@ -30,11 +30,11 @@ class Certificates:
         self.update_onion_key()
 
     def get_onion_key(self):
-        with open(self.onion_pub_key_file, 'r') as f:
+        with open(self.onion_pub_key_file, 'rb') as f:
             return f.read()
 
     def get_identity_key(self):
-        with open(self.identity_pub_key_file, 'r') as f:
+        with open(self.identity_pub_key_file, 'rb') as f:
             return f.read()
 
     def sign(self, message: bytes) -> bytes:
@@ -120,7 +120,7 @@ def generate_ssl_cert(
         san_config_file.write(f"""
 [ v3_ca ]
 subjectAltName = IP:{ip}
-""".encode())
+""".encode('iso-8859-1'))
         san_config_file.flush()
 
         # Step 3: Sign the CSR using the CA and the temporary config file

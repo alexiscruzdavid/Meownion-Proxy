@@ -42,7 +42,7 @@ class OnionDirectory:
     def verify_signature(self, message: bytes, signature: bytes, public_key: str) -> bool:
         """Verify the signature of a message using the relay's long-term public key"""
         try:
-            key = serialization.load_pem_public_key(public_key.encode())
+            key = serialization.load_pem_public_key(public_key.encode('iso-8859-1'))
             key.verify(
                 signature,
                 message,
@@ -62,7 +62,7 @@ class OnionDirectory:
         relay_id = f"{ip}:{port}"
         
         # Verify signature
-        message = f"{ip}{port}{onion_key}".encode()
+        message = f"{ip}{port}{onion_key}".encode('iso-8859-1')
         if not self.verify_signature(message, signature, long_term_key):
             return False
 
@@ -85,7 +85,7 @@ class OnionDirectory:
                 return False
             
             # Verify signature
-            message = f"{ip}{port}".encode()
+            message = f"{ip}{port}".encode('iso-8859-1')
             if not self.verify_signature(message, signature, self.relays[relay_id].long_term_key):
                 return False
                 

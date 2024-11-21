@@ -1,11 +1,14 @@
 import subprocess
 import time
+import threading
 import socket
 from onion_relay import OnionRelay
 from tor_encryption import encrypt_message_with_circuit
 from onion_directory import OnionDirectory
 from onion_proxy import OnionProxy
 from random import choice
+import os
+
 NUMER_OF_RELAYS = 5
 MAX_RELAYS = 30
 MAX_CLIENTS = 30
@@ -32,9 +35,10 @@ def is_server_reachable(host="127.0.0.1", port=8001, retries=0, delay=1):
 # Construct the path to the Flask application script
 
 # Start the Flask server by directly running the script
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 process = subprocess.Popen(
     ["python3", "-m", "onion_directory_server"],
-    cwd="/home/adc94/Simple-Tor/src",
+    cwd="{}".format(BASE_DIR),
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
 )
@@ -62,17 +66,55 @@ if __name__ == '__main__':
     op = OnionProxy('127.0.0.1', PROXY_PORT)
     op_states = op.get_states()
     op_dest_port = op.get_destination_port()
+    # TODO: remove after test
+    op_dest_port = 32204
     
     dest_state_index = None
+    src_state_index = None
     for i in range(len(op_states)):
         if op_states[i]['port'] == op_dest_port:
             dest_state_index = i
+        if op_states[i]['port'] == PROXY_PORT:
+            src_state_index = i
           
+    # TODO: move to proxy
     circuit = []
-    for i in range(3):
-        curr_relay_index = choice([relay_index for relay_index in range(0,len(op_states)) if relay_index != dest_state_index])
+    for i in range(2):
+        curr_relay_index = choice([relay_index for relay_index in range(0,len(op_states)) if (relay_index != dest_state_index and relay_index != src_state_index)])
         circuit.append(op_states[curr_relay_index])
     
     op.start(circuit)
+    
+    for relay in onion_relays:
+        with relay.connection_lock:
+            for connection in relay.connections:
+                try:
+                    connection.close()
+                except Exception as e:
+                    print(f"Error closing connection: {e}")
+        try:
+            relay.shutdown()
+        except Exception as e:
+            print(f"Error shutting down relay: {e}")
+    
+    with op.relay.connection_lock:
+        for connection in op.relay.connections:
+            connection.close()
+    op.relay.shutdown()
+
+    # Ensure all threads are joined
+    for thread in threading.enumerate():
+        if thread is not threading.main_thread():
+            thread.join()
+
+    print("All threads joined. Exiting.")
+    process.terminate()
+    print("Flask server terminated.")
+    process.wait()
+    print("Flask server process exited.")
+
+
+    
+    
     
     

@@ -2,11 +2,16 @@ import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from tor_header import DefaultTorHeaderWrapper, RelayTorHeaderWrapper
+from hashlib import sha256
+
+PADDING_BYTES = 128
 
 def encrypt_message(byte_message: bytes, key: bytes):
-    padder = padding.PKCS7(128).padder()
+    padder = padding.PKCS7(PADDING_BYTES).padder()
+
     byte_message = padder.update(byte_message) + padder.finalize()
     
+    key = sha256(key).digest()[:16]
     # using key[:16] for the IV just for a proof of concept
     cipher = Cipher(algorithms.AES(key), modes.CBC(key[:16]))
     encryptor = cipher.encryptor()
@@ -15,12 +20,13 @@ def encrypt_message(byte_message: bytes, key: bytes):
 
 
 def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
+    key = sha256(key).digest()[:16]
     cipher = Cipher(algorithms.AES(key), modes.CBC(key[:16]))
     decryptor = cipher.decryptor()
 
     padded_message = decryptor.update(cipher_text) + decryptor.finalize()
     
-    unpadder = padding.PKCS7(128).unpadder()
+    unpadder = padding.PKCS7(PADDING_BYTES).unpadder()
     byte_message = unpadder.update(padded_message) + unpadder.finalize()
     
     return byte_message

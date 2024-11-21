@@ -57,7 +57,7 @@ class MockRelay:
         long_term_pem, onion_pem = self.get_public_keys_pem()
         
         
-        message = f"{self.ip}{self.port}{onion_pem}".encode()
+        message = f"{self.ip}{self.port}{onion_pem}".encode('iso-8859-1')
         signature = self.sign_message(message)
         
         data = {
@@ -72,7 +72,7 @@ class MockRelay:
     
     def send_heartbeat(self, directory_url: str) -> requests.Response:
         """Send heartbeat to directory"""
-        message = f"{self.ip}{self.port}{time.time()}".encode()
+        message = f"{self.ip}{self.port}{time.time()}".encode('iso-8859-1')
         signature = self.sign_message(message)
         
         data = {

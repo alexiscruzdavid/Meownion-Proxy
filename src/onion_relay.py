@@ -52,6 +52,13 @@ class OnionRelay:
         logging.info(f"{self.tags['start']} initialized at {self.ip}:{self.port}")
 
     def start(self):
+        signal.signal(signal.SIGINT, self.shutdown)
+        signal.signal(signal.SIGTERM, self.shutdown)
+        signal.signal(signal.SIGHUP, self.shutdown)
+        signal.signal(signal.SIGQUIT, self.shutdown)
+        signal.signal(signal.SIGUSR1, self.shutdown)
+        signal.signal(signal.SIGUSR2, self.shutdown)
+
         self.upload_state()
         self.update_connections()
 
@@ -67,10 +74,11 @@ class OnionRelay:
     def relay_message_to_next_hop(self, next_relay_ip, next_relay_port, relay_message_data):
         while not self.shutdown_flag.is_set():
             logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{self.port}")
-            
-            next_relay_socket = self.connections[f"{next_relay_ip}:{next_relay_port}"]
+            with self.connections_lock:
+                next_relay_socket = self.connections[f"{next_relay_ip}:{next_relay_port}"]
+            logging.info(f"{self.tags['connection']} sending message to {next_relay_ip}:{next_relay_port}")
+            logging.info(f"{self.tags['connection']} socket: {next_relay_socket}")
             next_relay_socket.sendall(relay_message_data)                            
-            next_relay_socket.close()
             
     def accept_incoming_connections(self):
         while not self.shutdown_flag.is_set():
@@ -108,7 +116,7 @@ class OnionRelay:
             
             tor_message = DefaultTorHeaderWrapper()
             tor_message.unpackMessage(data)
-            
+            logging.info(f"command is {tor_message.cmd} and port is {tor_message}")
             relay_message = RelayTorHeaderWrapper()
             relay_message.unpackMessage(tor_message.data)
         
@@ -117,7 +125,7 @@ class OnionRelay:
             # if we have reached the destination (i.e. if this node is the destination)
             if curr_circuit[-1].node_ip == self.ip:
                 # TODO udpate logic here
-                print(relay_message.data.decode('utf-8'))
+                print(relay_message.data.decode('iso-8859-1'))
             else:    
                 # find next relay and then send the data to them
                 next_relay = None
@@ -146,7 +154,7 @@ class OnionRelay:
         next_relay_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         next_relay_address = (ip, port)
         next_relay_socket.connect(next_relay_address)
-        
+
         self.connections[f"{ip}:{port}"] = next_relay_socket
 
     def handle_outgoing_connection(self, tls_sock: ssl.SSLSocket, ip: str, port: int):
@@ -171,9 +179,9 @@ class OnionRelay:
         data = {
             'ip': self.ip,
             'port': self.port,
-            'onion_key': self.certificates.get_onion_key(),
-            'long_term_key': self.certificates.get_identity_key(),
-            'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key()}".encode()).hex()
+            'onion_key': self.certificates.get_onion_key().decode('iso-8859-1'),
+            'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
+            'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key().decode('iso-8859-1')}".encode('iso-8859-1')).hex()
         }
         response = requests.post(url, json=data)
         if response.status_code == 200:
@@ -225,7 +233,7 @@ class OnionRelay:
             'ip': self.ip,
             'port': self.port,
             'signature': self.certificates.sign(
-                f"{self.ip}{self.port}".encode()).hex()
+                f"{self.ip}{self.port}".encode('iso-8859-1')).hex()
         }
         response = requests.post(url, json=data)
         if response.status_code == 200:
@@ -245,8 +253,33 @@ class OnionRelay:
     def destroy_circuit(self):
         pass
 
-    # def shutdown(self, signum=None, frame=None):
-    #     pass
+    def shutdown(self, signum=None, frame=None):
+        for file_path in [
+            self.certificates.tls_cert_file, self.certificates.tls_key_file, self.certificates.tls_csr_file,
+            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        ]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
+        self.shutdown_flag.set()
+        with self.threads_lock:
+            for thread in self.threads:
+                if thread.is_alive():
+                    thread.join()
+        with self.connections_lock:
+            print(f'closing connections: {self.connections.values()}')
+            for connection in self.connections.values():
+                connection.close()
+        for file_path in [
+            self.certificates.tls_cert_file, self.certificates.tls_key_file,
+            self.certificates.identity_key_file, self.certificates.identity_pub_key_file,
+            self.certificates.onion_key_file, self.certificates.onion_pub_key_file
+        ]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")        
+        
 
     def __str__(self):
         return 'IP: {}:{} /nOnion Key: {} /nConnections :{}'.format(self.ip, self.port, self.onion_key, self.connections)

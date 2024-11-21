@@ -38,11 +38,12 @@ class OnionProxy():
         print('The chosen onion proxy port is {}'.format(self.src_port))
 
         
-        
-        while True:
-            message = input('Type in your message ')
-            print('Sending Message {} to {}'.format(message, self.dest_port))
-            byte_cipher_text = encrypt_message_with_circuit(message.encode('iso-8859-1'), circuit, 1, 1)
-            print('Your encrypted message is {}'.format(byte_cipher_text.decode('iso-8859-1')))
-            self.relay.relay_message_to_next_hop(circuit[0]['ip'], circuit[0]['port'], byte_cipher_text)
+        # TODO: put in the while true loop
+        # while True:
+        message = input('Type in your message ')
+        print('Sending Message {} to {}'.format(message, self.dest_port))
+        byte_cipher_text = encrypt_message_with_circuit(message.encode('iso-8859-1'), circuit, 1, 1)
+        hex_cipher_text = ":".join("{:02x}".format(ord(c)) for c in byte_cipher_text.decode('iso-8859-1'))
+        print('Your encrypted message is {}'.format(hex_cipher_text))
+        self.relay.relay_message_to_next_hop(circuit[0]['ip'], circuit[0]['port'], byte_cipher_text)
             
