@@ -1,0 +1,33 @@
+2024-11-20 18:07:24,420 - DirectoryServer - INFO - Generating new self-signed certificates...
+2024-11-20 18:07:24,620 - DirectoryServer - INFO - Certificates generated in ../certs/tls
+2024-11-20 18:07:24,668 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on https://127.0.0.1:8001
+2024-11-20 18:07:24,668 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2024-11-20 18:09:07,125 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on https://127.0.0.1:8001
+2024-11-20 18:09:07,126 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2024-11-20 18:09:51,930 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:09:51] "[31m[1mPOST /upload_state HTTP/1.1[0m" 401 -
+2024-11-20 18:09:51,944 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:09:51] "[31m[1mPOST /heartbeat HTTP/1.1[0m" 401 -
+2024-11-20 18:09:51,957 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:09:51] "GET /download_states HTTP/1.1" 200 -
+2024-11-20 18:11:00,112 - DirectoryServer - INFO - Using certificate path: ../certs/tls
+2024-11-20 18:11:00,131 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on https://127.0.0.1:8001
+2024-11-20 18:11:00,132 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2024-11-20 18:11:04,179 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:11:04] "[31m[1mPOST /upload_state HTTP/1.1[0m" 401 -
+2024-11-20 18:11:04,193 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:11:04] "[31m[1mPOST /heartbeat HTTP/1.1[0m" 401 -
+2024-11-20 18:11:04,206 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:11:04] "GET /download_states HTTP/1.1" 200 -
+2024-11-20 18:13:44,290 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:13:44] "POST /upload_state HTTP/1.1" 200 -
+2024-11-20 18:13:44,306 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:13:44] "POST /heartbeat HTTP/1.1" 200 -
+2024-11-20 18:13:44,320 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:13:44] "GET /download_states HTTP/1.1" 200 -
+2024-11-20 18:17:31,755 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on https://127.0.0.1:8001
+2024-11-20 18:17:31,755 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2024-11-20 18:20:30,091 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:20:30] "POST /upload_state HTTP/1.1" 200 -
+2024-11-20 18:20:30,106 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:20:30] "POST /heartbeat HTTP/1.1" 200 -
+2024-11-20 18:20:30,119 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:20:30] "GET /download_states HTTP/1.1" 200 -
+2024-11-20 18:22:26,387 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:22:26] "POST /upload_state HTTP/1.1" 200 -
+2024-11-20 18:22:26,403 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:22:26] "POST /heartbeat HTTP/1.1" 200 -
+2024-11-20 18:22:26,417 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:22:26] "GET /download_states HTTP/1.1" 200 -
+2024-11-20 18:23:06,781 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:23:06] "POST /upload_state HTTP/1.1" 200 -
+2024-11-20 18:23:06,795 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:23:06] "POST /heartbeat HTTP/1.1" 200 -
+2024-11-20 18:23:06,808 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:23:06] "GET /download_states HTTP/1.1" 200 -
