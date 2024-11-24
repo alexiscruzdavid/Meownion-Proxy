@@ -89,7 +89,7 @@ def generate_ssl_cert(
     cn: str,
     ip: str,
 ):
-    print(f"Generating certificate request (CSR) for relay {cn} at {ip} ...")
+    # print(f"Generating certificate request (CSR) for relay {cn} at {ip} ...")
     openssl_path = check_openssl()
 
     # Step 1: Generate Certificate Signing Request (CSR) and Key
@@ -104,15 +104,15 @@ def generate_ssl_cert(
         "-addext", f"subjectAltName=IP:{ip}",
     ]
 
-    print("Running command to generate CSR and key:")
-    print(" ".join(cmd))
+    # print("Running command to generate CSR and key:")
+    # print(" ".join(cmd))
 
     try:
         subprocess.run(cmd, check=True, shell=False)
-        print(f"Successfully generated CSR '{csr_file}' and key '{key_file}'.")
+        # print(f"Successfully generated CSR '{csr_file}' and key '{key_file}'.")
     except subprocess.CalledProcessError as e:
-        print("An error occurred while generating the CSR:")
-        print(e)
+        # print("An error occurred while generating the CSR:")
+        # print(e)
         sys.exit(1)
 
     # Step 2: Create a temporary configuration file with SAN
@@ -124,7 +124,7 @@ subjectAltName = IP:{ip}
         san_config_file.flush()
 
         # Step 3: Sign the CSR using the CA and the temporary config file
-        print(f"Signing certificate using custom CA for relay {cn} at {ip} ...")
+        # print(f"Signing certificate using custom CA for relay {cn} at {ip} ...")
         cmd = [
             openssl_path,
             "x509",
@@ -140,15 +140,15 @@ subjectAltName = IP:{ip}
             "-extensions", "v3_ca"
         ]
 
-        print("Running command to sign the CSR:")
-        print(" ".join(cmd))
+        # print("Running command to sign the CSR:")
+        # print(" ".join(cmd))
 
         try:
             subprocess.run(cmd, check=True, shell=False)
-            print(f"Successfully signed certificate '{cert_file}' using CA.")
+            # print(f"Successfully signed certificate '{cert_file}' using CA.")
         except subprocess.CalledProcessError as e:
-            print("An error occurred while signing the certificate:")
-            print(e)
+            # print("An error occurred while signing the certificate:")
+            # print(e)
             sys.exit(1)
         finally:
             if san_config_file and os.path.exists(san_config_file.name):
@@ -163,15 +163,15 @@ def generate_rsa_key_pair(private_key_path: str, public_key_path: str):
         "openssl", "rsa", "-in", private_key_path, "-pubout", "-out", public_key_path
     ]
     subprocess.run(cmd_gen_private_key, check=True)
-    print(f"Private key generated")
+    # print(f"Private key generated")
     subprocess.run(cmd_gen_public_key, check=True)
-    print(f"Public key generated at {public_key_path}")
+    # print(f"Public key generated at {public_key_path}")
 
 
 def check_openssl() -> str:
     openssl_path = shutil.which("openssl")
     if openssl_path is None:
-        print("Error: OpenSSL is not installed or not found in your PATH.")
+        # print("Error: OpenSSL is not installed or not found in your PATH.")
         sys.exit(1)
     return openssl_path
 

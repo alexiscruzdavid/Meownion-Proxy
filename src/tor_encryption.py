@@ -1,7 +1,7 @@
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
-from tor_header import DefaultTorHeaderWrapper, RelayTorHeaderWrapper
+from tor_header import RelayTorHeader
 from hashlib import sha256
 
 PADDING_BYTES = 128
@@ -31,15 +31,15 @@ def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
     
     return byte_message
 
+
+# TODO: Fix relay tor header call
 def encrypt_message_with_circuit(message, circuit, circID, streamID):
     for circuit_node in circuit:
         _, node_key = circuit_node['ip'], circuit_node['onion_key'].encode('iso-8859-1')
         
-        curr_relay_header = RelayTorHeaderWrapper(circID, 'RELAY_DATA', streamID, 0, len(message), 'RELAY', message)
+        curr_relay_header = RelayTorHeader(circID, 'RELAY_DATA', streamID, 0, len(message), 'RELAY', message)
         relay_message = curr_relay_header.create_message()
         
-        curr_tor_header = DefaultTorHeaderWrapper(circID, 'RELAY', len(relay_message), relay_message)
-        tor_message = curr_tor_header.create_message()
         
         message = encrypt_message(tor_message, node_key)    
     return message

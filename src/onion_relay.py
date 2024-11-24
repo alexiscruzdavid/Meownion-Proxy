@@ -1,5 +1,10 @@
-import time
+'''
+11/23 Notes
+    - Got rid of start_outgoing_connection in update_connections since we are not going to reuse connections
+    - Next hop changed to starting a brand new socket rather than reusing connections
+'''
 
+import time
 from utils.certificates import Certificates
 from onion_directory import OnionDirectory
 from typing import Tuple, List
@@ -9,9 +14,10 @@ import threading
 import logging
 import signal
 import requests
+import random
 import os
 from tor_encryption import decrypt_message
-from tor_header import DefaultTorHeaderWrapper, RelayTorHeaderWrapper
+from tor_header import RelayTorHeader, RELAY_CMD_ENUM
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
@@ -22,7 +28,7 @@ MAX_CLIENTS = 30
 
 TAGS = ['start', 'connection', 'circuit']
 HEARTBEAT_INTERVAL = 60
-
+RELAY_IP = "127.0.0.1"
 
 
 
@@ -35,13 +41,14 @@ class OnionRelay:
         self.directory = (directory_ip, directory_port)
         self.connections = {}
         self.connections_lock = threading.Lock()
-        self.circuits = {}
+        self.all_circuits = set()
+        self.circuit_forwarding = {} # CircuitID: Addr
         self.shutdown_flag = threading.Event()
         self.threads = []
         self.threads_lock = threading.Lock()
         self.tags = {}
         self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # bind the socket to own ip and listen for incoming connections
         self.server_sock.bind((self.ip, self.port)) 
         self.server_sock.listen(MAX_RELAYS + MAX_CLIENTS)
@@ -49,6 +56,7 @@ class OnionRelay:
         for tag in TAGS:
             self.tags[tag] = f"[{tag.upper()}] : OnionRelay {self.name} :"
 
+        logging.basicConfig(level=logging.INFO)
         logging.info(f"{self.tags['start']} initialized at {self.ip}:{self.port}")
 
     def start(self):
@@ -69,16 +77,56 @@ class OnionRelay:
             self.threads.append(incoming_connections_thread)
         incoming_connections_thread.start()
 
+    def circuit_create_received(self, src_circuit_id, source_server_port):
+        self.all_circuits.add(src_circuit_id)
+        self.circuit_forwarding[src_circuit_id] = (source_server_port, None)
+        
+    def circuit_extend_received(self, src_circuit_id, dst_server_port, data):
+        dst_circuit_id = random.randint(1, 1000)
+        while dst_circuit_id in self.all_circuits:
+            dst_circuit_id = random.randint(1, 1000)
+        self.all_circuits.add(dst_circuit_id)
+        self.circuit_forwarding[src_circuit_id][1] = (dst_circuit_id, dst_server_port)
+        self.circuit_create_send(dst_circuit_id, self.port, dst_server_port, data)
 
+    def circuit_create_send(self, dst_circuit_id: int, src_server_port: int, dst_server_port: int, data: bytearray):
+        relay_message = RelayTorHeader(dst_circuit_id, 'CREATE', src_server_port, 0, data)
+        relay_message.initialize(dst_circuit_id, 'CREATE', src_server_port, 0, data)
+        relay_message_data = relay_message.create_message()
+        self.relay_message_to_next_hop(dst_server_port, relay_message_data)
 
-    def relay_message_to_next_hop(self, next_relay_ip, next_relay_port, relay_message_data):
-        while not self.shutdown_flag.is_set():
-            logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{self.port}")
-            with self.connections_lock:
-                next_relay_socket = self.connections[f"{next_relay_ip}:{next_relay_port}"]
-            logging.info(f"{self.tags['connection']} sending message to {next_relay_ip}:{next_relay_port}")
-            logging.info(f"{self.tags['connection']} socket: {next_relay_socket}")
-            next_relay_socket.sendall(relay_message_data)                            
+    def relay_data_received(self, src_circuit_id: int, data: bytearray):
+        # Going forwards
+        if src_circuit_id in self.circuit_forwarding:
+            dst_circuit_id, dst_server_port = self.circuit_forwarding[src_circuit_id][1]
+            relay_message = RelayTorHeader()
+            relay_message.initialize(dst_circuit_id, 'RELAY_DATA', -1, -1, data)
+            relay_message_data = relay_message.create_message()
+            self.relay_message_to_next_hop(dst_server_port, relay_message_data)
+        # Going backwards, check values
+        else:
+            dst_circuit_id, dst_server_port = self.find_returning_port(src_circuit_id)
+            relay_message = RelayTorHeader()
+            relay_message.initialize(dst_circuit_id, 'RELAY_DATA', -1, -1, data)
+            relay_message_data = relay_message.create_message()
+            self.relay_message_to_next_hop(dst_server_port, relay_message_data)
+     
+    def find_returning_port(self, src_circuit_id: int):
+        for _, (dst_circuit_id, dst_server_port) in self.circuit_forwarding.values():
+            if dst_circuit_id == src_circuit_id:
+                return dst_circuit_id, dst_server_port
+        return -1
+
+    def relay_message_to_next_hop(self, next_relay_port, relay_message_data):
+        logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{self.port}")
+        # TODO Go back to using connections eventually first IP, then storing sockets
+        # with self.connections_lock:
+        #     next_relay_socket = self.connections[f"{next_relay_ip}:{next_relay_port}"]
+        next_relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        next_relay_socket.connect((RELAY_IP, next_relay_port))
+        logging.info(f"{self.tags['connection']} sending message to {next_relay_port}")
+        # logging.info(f"{self.tags['connection']} socket: {next_relay_socket}")
+        next_relay_socket.sendall(relay_message_data)                            
             
     def accept_incoming_connections(self):
         while not self.shutdown_flag.is_set():
@@ -96,62 +144,48 @@ class OnionRelay:
 
     def handle_incoming_connection(self, client_sock, client_addr):
         '''
-        TODO: Set up forwarding to next relay which will require locking on each socket
+        TODO: Change close function to be when done
         '''
-        # with self.connections_lock:
-        #     self.connections[client_addr] = client_sock
 
         logging.info(f"{self.tags['connection']} received from {client_addr}")
         
         data = bytes()
-        while not self.shutdown_flag.is_set():
+        while True:
             temp = client_sock.recv(1024)
             if not temp:
                 break
             data += temp
         
         if data:
+            data = decrypt_message(data, self.certificates.get_onion_key())
+            
 
-            data = decrypt_message(data, self.key)
-            
-            tor_message = DefaultTorHeaderWrapper()
-            tor_message.unpackMessage(data)
-            logging.info(f"command is {tor_message.cmd} and port is {tor_message}")
-            relay_message = RelayTorHeaderWrapper()
-            relay_message.unpackMessage(tor_message.data)
+            relay_message = RelayTorHeader()
+            relay_message.unpackMessage(data)
+            logging.info(f"command is {relay_message.cmd} and port is {relay_message}")
         
-            curr_circuit = self.circuits[relay_message.circID]
-            
-            # if we have reached the destination (i.e. if this node is the destination)
-            if curr_circuit[-1].node_ip == self.ip:
-                # TODO udpate logic here
-                print(relay_message.data.decode('iso-8859-1'))
-            else:    
-                # find next relay and then send the data to them
-                next_relay = None
-                for index, circ_node in enumerate(curr_circuit):
-                    if circ_node.node_ip == self.ip:
-                        # once we reach the current node ip, then the next node ip is the next relay
-                        next_relay = curr_circuit[index+1]
-                
-                
-                relay_message_thread = threading.Thread(target=self.relay_message_to_next, args=(next_relay.node_ip, next_relay.node_port, relay_message.data), daemon=True)
-                with self.threads_lock:
-                    self.threads.append(relay_message_thread)
-                relay_message_thread.start()
-        
-        # with self.connections_lock:
-        #     self.connections.pop(client_addr)
-            # Might need to retry connection, or just wait for handler
+            if relay_message.cmd == RELAY_CMD_ENUM['CREATE']:
+                self.circuit_create_received(relay_message.circID, relay_message.src_server_port)
+
+            elif relay_message.cmd == RELAY_CMD_ENUM['EXTEND']:
+                self.circuit_extend_received(relay_message.circID, relay_message.dst_server_port, relay_message.data)
+
+            elif relay_message.cmd == RELAY_CMD_ENUM['RELAY_DATA']:
+                if relay_message.circID in self.all_circuits:
+                    self.relay_data_received(relay_message.circID, relay_message.data)
+                else:
+                    logging.info(f"{self.tags['connection']} Received message: {relay_message.data} from {client_addr}")
+                    # TODO: Send backwards
+
         client_sock.close()
         logging.info(f"{self.tags['connection']} closed connection with {client_addr}")
 
 
     def start_outgoing_connection(self, ip: str, port: int):
-        logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{self.port}")
-        
+        logging.info(f"{self.tags['connection']} starting outgoing connection to {ip}:{port}")
+
         next_relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        next_relay_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # next_relay_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         next_relay_address = (ip, port)
         next_relay_socket.connect(next_relay_address)
 
@@ -217,7 +251,9 @@ class OnionRelay:
             for state in states:
                 ip, port = state['ip'], state['port']
                 if (port != self.port) and (f"{ip}:{port}" not in self.connections):
-                    self.start_outgoing_connection(ip, port)
+                    pass
+                    #TODO uncomment once getting single socket storage over ip
+                    # self.start_outgoing_connection(ip, port)
 
     def heartbeat_periodic(self):
         """
@@ -242,16 +278,6 @@ class OnionRelay:
         else:
             logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
             return False
-
-
-    def create_circuit(self):
-        pass
-
-    def extend_circuit(self):
-        pass
-
-    def destroy_circuit(self):
-        pass
 
     def shutdown(self, signum=None, frame=None):
         for file_path in [

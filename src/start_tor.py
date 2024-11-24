@@ -12,7 +12,7 @@ import os
 NUMER_OF_RELAYS = 5
 MAX_RELAYS = 30
 MAX_CLIENTS = 30
-START_PORT = 32200
+START_PORT = 23000
 END_PORT = START_PORT + 5
 PROXY_PORT = END_PORT + 1
 
@@ -56,7 +56,7 @@ if not is_server_reachable(retries=2):
 onion_relays = []
 
 for port in range(START_PORT, END_PORT):
-    onion_relays.append(OnionRelay('{}:{}'.format('127.0.0.1',port), '127.0.0.1', port))
+    onion_relays.append(OnionRelay('{}:{}'.format('127.0.0.1', port), '127.0.0.1', port))
     onion_relays[port-START_PORT].start()
 
 
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     op_states = op.get_states()
     op_dest_port = op.get_destination_port()
     # TODO: remove after test
-    op_dest_port = 32204
+    op_dest_port = START_PORT
     
     dest_state_index = None
     src_state_index = None
@@ -83,10 +83,24 @@ if __name__ == '__main__':
         curr_relay_index = choice([relay_index for relay_index in range(0,len(op_states)) if (relay_index != dest_state_index and relay_index != src_state_index)])
         circuit.append(op_states[curr_relay_index])
     
+    first_relay = op_states[0]
+    op.create_circuit(0, op.src_port, first_relay['port'], first_relay[''])
+
+
+
+    for circuit_id, relay_state in enumerate(circuit[1:]):
+        # 'ip': self.ip,
+        #     'port': self.port,
+        #     'onion_key': self.certificates.get_onion_key().decode('iso-8859-1'),
+        #     'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
+
+        op.extend_circuit(relay_state['ip'], relay_state['port'], relay_state['onion_key'], relay_state['long_term_key'])
+        
+    
     op.start(circuit)
     
     for relay in onion_relays:
-        with relay.connection_lock:
+        with relay.connections_lock:
             for connection in relay.connections:
                 try:
                     connection.close()
