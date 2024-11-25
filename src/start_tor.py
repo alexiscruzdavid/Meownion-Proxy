@@ -77,24 +77,23 @@ if __name__ == '__main__':
         if op_states[i]['port'] == PROXY_PORT:
             src_state_index = i
           
-    # TODO: move to proxy
+    # TODO: WHERE WE LEFT OFF
     circuit = []
     for i in range(2):
         curr_relay_index = choice([relay_index for relay_index in range(0,len(op_states)) if (relay_index != dest_state_index and relay_index != src_state_index)])
         circuit.append(op_states[curr_relay_index])
     
     first_relay = op_states[0]
-    op.create_circuit(0, op.src_port, first_relay['port'], first_relay[''])
+    op.circuit_create_send(0, op.src_port, first_relay['port'])
 
 
-
-    for circuit_id, relay_state in enumerate(circuit[1:]):
+    for relay_state in circuit[1:]:
         # 'ip': self.ip,
         #     'port': self.port,
         #     'onion_key': self.certificates.get_onion_key().decode('iso-8859-1'),
         #     'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
 
-        op.extend_circuit(relay_state['ip'], relay_state['port'], relay_state['onion_key'], relay_state['long_term_key'])
+        op.circuit_extend_send(0, relay_state['port'])
         
     
     op.start(circuit)

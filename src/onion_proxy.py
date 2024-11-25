@@ -8,6 +8,7 @@ import os
 from onion_relay import OnionRelay
 from tor_encryption import encrypt_message_with_circuit
 from onion_directory import OnionDirectory
+from tor_header import RelayTorHeader, DATA_SIZE, NULL_PORT
 
 
 class OnionProxy():
@@ -32,11 +33,19 @@ class OnionProxy():
     def get_destination_port(self):
         return -1
     
-    def create_circuit(self, dst_circuit_id: int, src_server_port: int, dst_server_port: int, data: bytearray):
-        self.relay.circuit_create(dst_circuit_id, src_server_port, dst_server_port, data)
+    def circuit_create_send(self, src_circuit_id: int, src_server_port: int, dst_server_port: int):
+        self.relay.circuit_create_send(src_circuit_id, src_server_port, dst_server_port)
 
-    def extend_circuit(self, ip: str, port: int, onion_key: str, long_term_key: str):
-        pass
+    def circuit_extend_send(self, src_circuit_id: int, dst_server_port: int):
+        # Only proxy can send
+        NULL_DATA = bytearray(DATA_SIZE)
+        relay_message = RelayTorHeader()
+        relay_message.initialize(src_circuit_id, 'EXTEND', dst_server_port, NULL_PORT, NULL_DATA)
+        relay_message_data = relay_message.create_message()
+        self.relay_message_to_next_hop(dst_server_port, relay_message_data)
+
+    def relay_message_to_next_hop(self, port, message):
+        self.relay.relay_message_to_next_hop(port, message)
 
     
     def start(self, circuit):

@@ -11,6 +11,7 @@ def encrypt_message(byte_message: bytes, key: bytes):
 
     byte_message = padder.update(byte_message) + padder.finalize()
     
+    
     key = sha256(key).digest()[:16]
     # using key[:16] for the IV just for a proof of concept
     cipher = Cipher(algorithms.AES(key), modes.CBC(key[:16]))
@@ -26,9 +27,9 @@ def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
 
     padded_message = decryptor.update(cipher_text) + decryptor.finalize()
     
-    unpadder = padding.PKCS7(PADDING_BYTES).unpadder()
-    byte_message = unpadder.update(padded_message) + unpadder.finalize()
-    
+    # unpadder = padding.PKCS7(PADDING_BYTES).unpadder()
+    # byte_message = unpadder.update(padded_message) + unpadder.finalize()
+    byte_message = padded_message
     return byte_message
 
 

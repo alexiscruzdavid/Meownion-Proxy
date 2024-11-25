@@ -16,8 +16,8 @@ import signal
 import requests
 import random
 import os
-from tor_encryption import decrypt_message
-from tor_header import RelayTorHeader, RELAY_CMD_ENUM
+from tor_encryption import decrypt_message, encrypt_message
+from tor_header import RelayTorHeader, RELAY_CMD_ENUM, DATA_SIZE, NULL_PORT
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
@@ -81,34 +81,45 @@ class OnionRelay:
         self.all_circuits.add(src_circuit_id)
         self.circuit_forwarding[src_circuit_id] = (source_server_port, None)
         
-    def circuit_extend_received(self, src_circuit_id, dst_server_port, data):
+    def circuit_extend_received(self, src_circuit_id: int, dst_server_port):
         dst_circuit_id = random.randint(1, 1000)
         while dst_circuit_id in self.all_circuits:
             dst_circuit_id = random.randint(1, 1000)
         self.all_circuits.add(dst_circuit_id)
         self.circuit_forwarding[src_circuit_id][1] = (dst_circuit_id, dst_server_port)
-        self.circuit_create_send(dst_circuit_id, self.port, dst_server_port, data)
+        self.circuit_create_send(dst_circuit_id, self.port, dst_server_port)
 
-    def circuit_create_send(self, dst_circuit_id: int, src_server_port: int, dst_server_port: int, data: bytearray):
-        relay_message = RelayTorHeader(dst_circuit_id, 'CREATE', src_server_port, 0, data)
-        relay_message.initialize(dst_circuit_id, 'CREATE', src_server_port, 0, data)
+    def circuit_create_send(self, src_circuit_id: int, src_server_port: int, dst_server_port: int):
+        NULL_DATA = bytearray(DATA_SIZE)
+        relay_message = RelayTorHeader()
+        relay_message.initialize(src_circuit_id, 'CREATE', src_server_port, NULL_PORT, NULL_DATA)
         relay_message_data = relay_message.create_message()
+        for relay_state in self.relay_states:
+            if relay_state['port'] == dst_server_port:
+                relay_message_data = encrypt_message(relay_message_data, relay_state['onion_key'].encode('iso-8859-1'))
+                break
         self.relay_message_to_next_hop(dst_server_port, relay_message_data)
 
     def relay_data_received(self, src_circuit_id: int, data: bytearray):
+        for relay_state in self.relay_states:
+            if relay_state['port'] == dst_server_port:
+                dst_relay_onion_key = relay_state['onion_key']        
+        
         # Going forwards
         if src_circuit_id in self.circuit_forwarding:
             dst_circuit_id, dst_server_port = self.circuit_forwarding[src_circuit_id][1]
             relay_message = RelayTorHeader()
-            relay_message.initialize(dst_circuit_id, 'RELAY_DATA', -1, -1, data)
+            relay_message.initialize(dst_circuit_id, 'RELAY_DATA', NULL_PORT, NULL_PORT, data)
             relay_message_data = relay_message.create_message()
-            self.relay_message_to_next_hop(dst_server_port, relay_message_data)
+            relay_message_data = encrypt_message(relay_message_data, dst_relay_onion_key)
+            self.relay_message_to_next_hop(dst_server_port, relay_message_data.decode())
         # Going backwards, check values
         else:
             dst_circuit_id, dst_server_port = self.find_returning_port(src_circuit_id)
             relay_message = RelayTorHeader()
-            relay_message.initialize(dst_circuit_id, 'RELAY_DATA', -1, -1, data)
+            relay_message.initialize(dst_circuit_id, 'RELAY_DATA', NULL_PORT, NULL_PORT, data)
             relay_message_data = relay_message.create_message()
+            relay_message_data = encrypt_message(relay_message_data, dst_relay_onion_key.decode())
             self.relay_message_to_next_hop(dst_server_port, relay_message_data)
      
     def find_returning_port(self, src_circuit_id: int):
@@ -155,20 +166,28 @@ class OnionRelay:
             if not temp:
                 break
             data += temp
-        
+        logging.log(logging.INFO, f"Data {data.decode('iso-8859-1')}")
+        logging.log(logging.INFO, f"Data Size {len(data)}")
         if data:
+            # TODO: Haven't encrypted it yet, but we are still decrypting it. Create message, ... is not
+            # encrypting the message
             data = decrypt_message(data, self.certificates.get_onion_key())
-            
-
+            logging.log(logging.INFO, f"Decrypted Data {data.decode('iso-8859-1')}")
             relay_message = RelayTorHeader()
-            relay_message.unpackMessage(data)
-            logging.info(f"command is {relay_message.cmd} and port is {relay_message}")
+            relay_message.unpack_message(data)
+            logging.info(f"src_port is {relay_message.src_server_port} and dst_port is {relay_message.dst_server_port}")
+            logging.info(f"command is {relay_message.cmd} and circId is {relay_message.circID}")
+            logging.info(f"Data is {relay_message.data}")
         
             if relay_message.cmd == RELAY_CMD_ENUM['CREATE']:
+                logging.info(f"{self.tags['connection']} Creating circuit {relay_message.circID} from {self.port}") 
                 self.circuit_create_received(relay_message.circID, relay_message.src_server_port)
+                logging.info(f"{self.tags['connection']} Created circuit {relay_message.circID} from {self.port}")
 
             elif relay_message.cmd == RELAY_CMD_ENUM['EXTEND']:
+                logging.info(f"{self.tags['connection']} Extending circuit {relay_message.circID} from {self.port} to {relay_message.dst_server_port}")
                 self.circuit_extend_received(relay_message.circID, relay_message.dst_server_port, relay_message.data)
+                logging.info(f"{self.tags['connection']} Extended circuit {relay_message.circID} from {self.port} to {relay_message.dst_server_port}")
 
             elif relay_message.cmd == RELAY_CMD_ENUM['RELAY_DATA']:
                 if relay_message.circID in self.all_circuits:
@@ -239,21 +258,20 @@ class OnionRelay:
         '''
         Get states from directory server and update connections/states to relays
         If there is no connection already, assume you act as server
-
         Request HTTP Format:
 
         '''
-        states = self.download_states()
-        with self.connections_lock:
-            if states is None:
-                logging.error(f"{self.tags['start']} Failed to download states from directory")
-                return
-            for state in states:
-                ip, port = state['ip'], state['port']
-                if (port != self.port) and (f"{ip}:{port}" not in self.connections):
-                    pass
-                    #TODO uncomment once getting single socket storage over ip
-                    # self.start_outgoing_connection(ip, port)
+        self.relay_states = self.download_states()
+        if self.relay_states is None:
+            logging.error(f"{self.tags['start']} Failed to download states from directory")
+            return
+        # for state in relay_states:
+            
+        #     ip, port = state['ip'], state['port'], state['onion_key']
+        #     if (port != self.port) and (f"{ip}:{port}" not in self.connections):
+        #         pass
+        #             #TODO uncomment once getting single socket storage over ip
+        #             # self.start_outgoing_connection(ip, port)
 
     def heartbeat_periodic(self):
         """
