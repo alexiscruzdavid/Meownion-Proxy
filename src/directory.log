@@ -31,3 +31,9 @@
 2024-11-20 18:23:06,781 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:23:06] "POST /upload_state HTTP/1.1" 200 -
 2024-11-20 18:23:06,795 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:23:06] "POST /heartbeat HTTP/1.1" 200 -
 2024-11-20 18:23:06,808 - werkzeug - INFO - 127.0.0.1 - - [20/Nov/2024 18:23:06] "GET /download_states HTTP/1.1" 200 -
+2024-11-25 19:42:38,268 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on https://127.0.0.1:8001
+2024-11-25 19:42:38,270 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2024-11-25 20:07:23,257 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on https://127.0.0.1:8001
+2024-11-25 20:07:23,257 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
