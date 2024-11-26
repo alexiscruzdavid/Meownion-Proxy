@@ -35,12 +35,11 @@ def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
 
 # TODO: Fix relay tor header call
 def encrypt_message_with_circuit(message, circuit, circID, streamID):
+    curr_relay_header = RelayTorHeader()
+    curr_relay_header.initialize(circID, 'RELAY_DATA', streamID, 0, len(message), 'RELAY', message)
+    relay_message_part_1, relay_message_part_2 = curr_relay_header.create_message()
     for circuit_node in circuit:
         _, node_key = circuit_node['ip'], circuit_node['onion_key'].encode('iso-8859-1')
         
-        curr_relay_header = RelayTorHeader(circID, 'RELAY_DATA', streamID, 0, len(message), 'RELAY', message)
-        relay_message = curr_relay_header.create_message()
-        
-        
-        message = encrypt_message(tor_message, node_key)    
-    return message
+        relay_message_part_2 = encrypt_message(relay_message_part_2, node_key)    
+    return relay_message_part_1 + relay_message_part_2

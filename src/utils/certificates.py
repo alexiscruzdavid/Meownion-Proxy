@@ -4,6 +4,8 @@ import subprocess
 import sys
 import ssl
 import tempfile
+import logging
+from utils.logging import Loggable
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
@@ -11,8 +13,13 @@ from cryptography.hazmat.backends import default_backend
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-class Certificates:
+class CertificateOrKeyGenerationError(Exception):
+    pass
+
+class Certificates(Loggable):
     def __init__(self, name: str, ip: str):
+        # TODO: change level to info once done debugging 
+        super().__init__(log_type="Certificates", instance_name=name, log_level=logging.CRITICAL)
         self.name = name
         self.ip = ip
         self.CA_cert_file = os.path.join(BASE_DIR, '../../certs/ca_cert.pem')
@@ -29,13 +36,18 @@ class Certificates:
         self.update_identity_key()
         self.update_onion_key()
 
+
     def get_onion_key(self):
         with open(self.onion_pub_key_file, 'rb') as f:
-            return f.read()
+            onion_key = f.read()
+            self.logger.info(f"Fetched onion public key for {self.name}")
+            return onion_key
 
     def get_identity_key(self):
         with open(self.identity_pub_key_file, 'rb') as f:
-            return f.read()
+            identity_key = f.read()
+            self.logger.info(f"Fetched identity public key for {self.name}")
+            return identity_key
 
     def sign(self, message: bytes) -> bytes:
         with open(self.identity_key_file, "rb") as key_file:
@@ -49,6 +61,8 @@ class Certificates:
             ),
             hashes.SHA256()
         )
+
+        self.logger.info(f"Signed message for {self.name}")
         return signature
 
 
@@ -57,27 +71,39 @@ class Certificates:
         """
         For period regeneration
         """
-        generate_rsa_key_pair(self.onion_key_file, self.onion_pub_key_file)
+        try:
+            generate_rsa_key_pair(self.onion_key_file, self.onion_pub_key_file)
+            self.logger.info(f"Updated onion key for {self.name}")
+        except Exception as e:
+            raise CertificateOrKeyGenerationError(f"Error updating onion key for {self.name}: {e}")
+
 
     def update_identity_key(self):
         """
         For long term regeneration or security reasons
         """
-        generate_rsa_key_pair(self.identity_key_file, self.identity_pub_key_file)
+        try:
+            generate_rsa_key_pair(self.identity_key_file, self.identity_pub_key_file)
+        except Exception as e:
+            raise CertificateOrKeyGenerationError(f"Error updating identity key for {self.name}: {e}")
+
 
     def update_tls_certs(self, ip):
         """
         For long term regeneration, changing ip, or security reasons
         """
-        generate_ssl_cert(self.tls_cert_file, self.tls_key_file, self.tls_csr_file, self.CA_cert_file, self.CA_key_file, self.name, ip)
-        self.server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        self.server_context.load_verify_locations(self.CA_cert_file)
-        self.server_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
-        self.server_context.verify_mode = ssl.CERT_REQUIRED
-        self.client_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        self.client_context.load_verify_locations(self.CA_cert_file)
-        self.client_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
-        self.ip = ip
+        try:
+            generate_ssl_cert(self.tls_cert_file, self.tls_key_file, self.tls_csr_file, self.CA_cert_file, self.CA_key_file, self.name, ip)
+            self.server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            self.server_context.load_verify_locations(self.CA_cert_file)
+            self.server_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
+            self.server_context.verify_mode = ssl.CERT_REQUIRED
+            self.client_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            self.client_context.load_verify_locations(self.CA_cert_file)
+            self.client_context.load_cert_chain(self.tls_cert_file, self.tls_key_file)
+            self.ip = ip
+        except Exception as e:
+            raise CertificateOrKeyGenerationError(f"Error updating TLS certificates for {self.name}: {e}")
 
 
 def generate_ssl_cert(
@@ -108,7 +134,7 @@ def generate_ssl_cert(
     # print(" ".join(cmd))
 
     try:
-        subprocess.run(cmd, check=True, shell=False)
+        subprocess.run(cmd, check=True, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # print(f"Successfully generated CSR '{csr_file}' and key '{key_file}'.")
     except subprocess.CalledProcessError as e:
         # print("An error occurred while generating the CSR:")
@@ -140,15 +166,11 @@ subjectAltName = IP:{ip}
             "-extensions", "v3_ca"
         ]
 
-        # print("Running command to sign the CSR:")
-        # print(" ".join(cmd))
 
         try:
-            subprocess.run(cmd, check=True, shell=False)
-            # print(f"Successfully signed certificate '{cert_file}' using CA.")
+            subprocess.run(cmd, check=True, shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError as e:
-            # print("An error occurred while signing the certificate:")
-            # print(e)
+            logging.info(f"An error occurred while signing the CSR: {e}")
             sys.exit(1)
         finally:
             if san_config_file and os.path.exists(san_config_file.name):
@@ -162,11 +184,12 @@ def generate_rsa_key_pair(private_key_path: str, public_key_path: str):
     cmd_gen_public_key = [
         "openssl", "rsa", "-in", private_key_path, "-pubout", "-out", public_key_path
     ]
-    subprocess.run(cmd_gen_private_key, check=True)
-    # print(f"Private key generated")
-    subprocess.run(cmd_gen_public_key, check=True)
-    # print(f"Public key generated at {public_key_path}")
-
+    try:
+        subprocess.run(cmd_gen_private_key, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(cmd_gen_public_key, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        raise CertificateOrKeyGenerationError(f"Error generating RSA key pair: {e}")
+    
 
 def check_openssl() -> str:
     openssl_path = shutil.which("openssl")

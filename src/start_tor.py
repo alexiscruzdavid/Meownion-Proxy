@@ -8,6 +8,8 @@ from onion_directory import OnionDirectory
 from onion_proxy import OnionProxy
 from random import choice
 import os
+import logging 
+logging.basicConfig(level=logging.INFO)
 
 NUMER_OF_RELAYS = 5
 MAX_RELAYS = 30
@@ -77,7 +79,6 @@ if __name__ == '__main__':
         if op_states[i]['port'] == PROXY_PORT:
             src_state_index = i
           
-    # TODO: WHERE WE LEFT OFF
     circuit = []
     for i in range(2):
         curr_relay_index = choice([relay_index for relay_index in range(0,len(op_states)) if (relay_index != dest_state_index and relay_index != src_state_index)])
@@ -85,35 +86,35 @@ if __name__ == '__main__':
     
     first_relay = op_states[0]
     op.circuit_create_send(0, op.src_port, first_relay['port'])
+    time.sleep(5)
 
-
-    for relay_state in circuit[1:]:
-        # 'ip': self.ip,
-        #     'port': self.port,
-        #     'onion_key': self.certificates.get_onion_key().decode('iso-8859-1'),
-        #     'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
-
-        op.circuit_extend_send(0, relay_state['port'])
+    for index, relay_state in enumerate(circuit[1:], start=1):
+        op.circuit_extend_send(0, relay_state['port'], circuit[index:])
+        time.sleep(5)
         
-    
-    op.start(circuit)
-    
+    time.sleep(5)
+    # op.start(circuit)
     for relay in onion_relays:
-        with relay.connections_lock:
-            for connection in relay.connections:
-                try:
-                    connection.close()
-                except Exception as e:
-                    print(f"Error closing connection: {e}")
-        try:
-            relay.shutdown()
-        except Exception as e:
-            print(f"Error shutting down relay: {e}")
+        print(f"{relay.name} \n all_circuits: {relay.all_circuits} \n circuit_forwarding: {relay.circuit_forwarding} \n")
+    print(f"op circuits: {circuit} \n")
+
     
-    with op.relay.connection_lock:
-        for connection in op.relay.connections:
-            connection.close()
-    op.relay.shutdown()
+    # for relay in onion_relays:
+    #     with relay.connections_lock:
+    #         for connection in relay.connections:
+    #             try:
+    #                 connection.close()
+    #             except Exception as e:
+    #                 print(f"Error closing connection: {e}")
+    #     try:
+    #         relay.shutdown()
+    #     except Exception as e:
+    #         print(f"Error shutting down relay: {e}")
+    
+    # with op.relay.connections_lock:
+    #     for connection in op.relay.connections:
+    #         connection.close()
+    # op.relay.shutdown()
 
     # Ensure all threads are joined
     for thread in threading.enumerate():

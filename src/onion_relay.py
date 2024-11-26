@@ -18,22 +18,20 @@ import random
 import os
 from tor_encryption import decrypt_message, encrypt_message
 from tor_header import RelayTorHeader, RELAY_CMD_ENUM, DATA_SIZE, NULL_PORT
+from utils.logging import Loggable
 
 UPLOAD_INTERVAL = 60
 DOWNLOAD_INTERVAL = 60
 NUMER_OF_RELAYS = 5
 MAX_RELAYS = 30
 MAX_CLIENTS = 30
-
-
-TAGS = ['start', 'connection', 'circuit']
-HEARTBEAT_INTERVAL = 60
 RELAY_IP = "127.0.0.1"
 
 
 
-class OnionRelay:
+class OnionRelay(Loggable):
     def __init__(self, name: str, ip: str, port: int, directory_ip: str = "127.0.0.1", directory_port: int = 8001):
+        super().__init__(log_type="OnionRelay", instance_name=name)
         self.name = name
         self.ip = ip
         self.port = port
@@ -42,22 +40,17 @@ class OnionRelay:
         self.connections = {}
         self.connections_lock = threading.Lock()
         self.all_circuits = set()
-        self.circuit_forwarding = {} # CircuitID: Addr
+        self.circuit_forwarding = {}
         self.shutdown_flag = threading.Event()
         self.threads = []
         self.threads_lock = threading.Lock()
-        self.tags = {}
         self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # bind the socket to own ip and listen for incoming connections
         self.server_sock.bind((self.ip, self.port)) 
         self.server_sock.listen(MAX_RELAYS + MAX_CLIENTS)
-        
-        for tag in TAGS:
-            self.tags[tag] = f"[{tag.upper()}] : OnionRelay {self.name} :"
 
-        logging.basicConfig(level=logging.INFO)
-        logging.info(f"{self.tags['start']} initialized at {self.ip}:{self.port}")
+        self.logger.info(f"initializing at {self.ip}:{self.port}")
 
     def start(self):
         signal.signal(signal.SIGINT, self.shutdown)
@@ -78,26 +71,38 @@ class OnionRelay:
         incoming_connections_thread.start()
 
     def circuit_create_received(self, src_circuit_id, source_server_port):
+        self.logger.info(f"creating new circuit, already have {self.all_circuits} and {self.circuit_forwarding}")
         self.all_circuits.add(src_circuit_id)
         self.circuit_forwarding[src_circuit_id] = (source_server_port, None)
+        self.logger.info(f"allcircuts ={self.all_circuits} and circutforwarding={self.circuit_forwarding}")
         
     def circuit_extend_received(self, src_circuit_id: int, dst_server_port):
-        dst_circuit_id = random.randint(1, 1000)
-        while dst_circuit_id in self.all_circuits:
+        forwarding_circuit, forwarding_port = self.find_forwarding_port(src_circuit_id)
+        if forwarding_port == -1:
             dst_circuit_id = random.randint(1, 1000)
-        self.all_circuits.add(dst_circuit_id)
-        self.circuit_forwarding[src_circuit_id][1] = (dst_circuit_id, dst_server_port)
-        self.circuit_create_send(dst_circuit_id, self.port, dst_server_port)
+            while dst_circuit_id in self.all_circuits:
+                dst_circuit_id = random.randint(1, 1000)
+            self.all_circuits.add(dst_circuit_id)
+            self.circuit_forwarding[src_circuit_id][1] = (dst_circuit_id, dst_server_port)
+            self.circuit_create_send(dst_circuit_id, self.port, dst_server_port)
+        else:
+            NULL_DATA = bytearray(DATA_SIZE)
+            relay_message = RelayTorHeader()
+            relay_message.initialize(forwarding_circuit, 'CREATE', NULL_PORT, forwarding_port, NULL_DATA)
+            relay_message_1, relay_message_2 = relay_message.create_message()
+            self.relay_message_to_next_hop(forwarding_port, relay_message_1 + relay_message_2)
+            
 
     def circuit_create_send(self, src_circuit_id: int, src_server_port: int, dst_server_port: int):
         NULL_DATA = bytearray(DATA_SIZE)
         relay_message = RelayTorHeader()
         relay_message.initialize(src_circuit_id, 'CREATE', src_server_port, NULL_PORT, NULL_DATA)
-        relay_message_data = relay_message.create_message()
+        relay_message_data_part_1, relay_message_data_part_2 = relay_message.create_message()
         for relay_state in self.relay_states:
             if relay_state['port'] == dst_server_port:
-                relay_message_data = encrypt_message(relay_message_data, relay_state['onion_key'].encode('iso-8859-1'))
+                relay_message_data_part_2 = encrypt_message(relay_message_data_part_2, relay_state['onion_key'].encode('iso-8859-1'))
                 break
+        relay_message_data = relay_message_data_part_1 + relay_message_data_part_2
         self.relay_message_to_next_hop(dst_server_port, relay_message_data)
 
     def relay_data_received(self, src_circuit_id: int, data: bytearray):
@@ -110,43 +115,53 @@ class OnionRelay:
             dst_circuit_id, dst_server_port = self.circuit_forwarding[src_circuit_id][1]
             relay_message = RelayTorHeader()
             relay_message.initialize(dst_circuit_id, 'RELAY_DATA', NULL_PORT, NULL_PORT, data)
-            relay_message_data = relay_message.create_message()
-            relay_message_data = encrypt_message(relay_message_data, dst_relay_onion_key)
+            relay_message_data_part_1, relay_message_data_part_2 = relay_message.create_message()
+            
+            relay_message_data_part_2 = encrypt_message(relay_message_data_part_2, dst_relay_onion_key)
+            relay_message_data = relay_message_data_part_1 + relay_message_data_part_2
             self.relay_message_to_next_hop(dst_server_port, relay_message_data.decode())
         # Going backwards, check values
         else:
             dst_circuit_id, dst_server_port = self.find_returning_port(src_circuit_id)
             relay_message = RelayTorHeader()
             relay_message.initialize(dst_circuit_id, 'RELAY_DATA', NULL_PORT, NULL_PORT, data)
-            relay_message_data = relay_message.create_message()
-            relay_message_data = encrypt_message(relay_message_data, dst_relay_onion_key.decode())
+            relay_message_data_part_1, relay_message_data_part_2 = relay_message.create_message()
+            relay_message_data_part_2 = encrypt_message(relay_message_data_part_2, dst_relay_onion_key.decode())
+            relay_message_data = relay_message_data_part_1 + relay_message_data_part_2
             self.relay_message_to_next_hop(dst_server_port, relay_message_data)
      
     def find_returning_port(self, src_circuit_id: int):
-        for _, (dst_circuit_id, dst_server_port) in self.circuit_forwarding.values():
-            if dst_circuit_id == src_circuit_id:
-                return dst_circuit_id, dst_server_port
-        return -1
+        for returning_circuit_id, (returning_server_port, (forwarding_circuit_id, _)) in self.circuit_forwarding.items():
+            if src_circuit_id == forwarding_circuit_id:
+                return returning_circuit_id, returning_server_port
+        return -1, -1
+    
+    def find_forwarding_port(self, src_circuit_id: int):
+        circuit_forwarding_value = self.circuit_forwarding.get(src_circuit_id, -1)
+        if circuit_forwarding_value != -1 and circuit_forwarding_value[1] is not None:
+            circuit_forwarding_id = circuit_forwarding_value[1]
+            circuit_forwarding_port = circuit_forwarding_value[1][1]
+            return circuit_forwarding_id, circuit_forwarding_port
+        return -1, -1
 
     def relay_message_to_next_hop(self, next_relay_port, relay_message_data):
-        logging.info(f"{self.tags['connection']} unpacking message from {self.ip}:{self.port}")
+        self.logger.info(f"creating message from {self.ip}:{self.port}")
         # TODO Go back to using connections eventually first IP, then storing sockets
         # with self.connections_lock:
         #     next_relay_socket = self.connections[f"{next_relay_ip}:{next_relay_port}"]
         next_relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         next_relay_socket.connect((RELAY_IP, next_relay_port))
-        logging.info(f"{self.tags['connection']} sending message to {next_relay_port}")
-        # logging.info(f"{self.tags['connection']} socket: {next_relay_socket}")
+        self.logger.info(f"sending message to {next_relay_port}")
         next_relay_socket.sendall(relay_message_data)                            
             
     def accept_incoming_connections(self):
         while not self.shutdown_flag.is_set():
             
-            logging.info(f"{self.tags['connection']} listening on {self.ip}:{self.port}")
+            self.logger.info(f"istening on {self.ip}:{self.port}")
             
             client_sock, client_addr = self.server_sock.accept()
             
-            logging.info(f"{self.tags['connection']} accepted connection from {client_addr}")
+            self.logger.info(f"accepted connection from {client_addr}")
             
             client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(client_sock, client_addr), daemon=True)
             with self.threads_lock:
@@ -158,7 +173,7 @@ class OnionRelay:
         TODO: Change close function to be when done
         '''
 
-        logging.info(f"{self.tags['connection']} received from {client_addr}")
+        self.logger.info(f"received from {client_addr}")
         
         data = bytes()
         while True:
@@ -166,42 +181,44 @@ class OnionRelay:
             if not temp:
                 break
             data += temp
-        logging.log(logging.INFO, f"Data {data.decode('iso-8859-1')}")
-        logging.log(logging.INFO, f"Data Size {len(data)}")
+        self.logger.info(f"Data {data.decode('iso-8859-1')[:2]}")
+        self.logger.info(f"Data Size {len(data)}")
         if data:
             # TODO: Haven't encrypted it yet, but we are still decrypting it. Create message, ... is not
             # encrypting the message
-            data = decrypt_message(data, self.certificates.get_onion_key())
-            logging.log(logging.INFO, f"Decrypted Data {data.decode('iso-8859-1')}")
+            data_part_1 = data[:6]
+            data_part_2 = decrypt_message(data[6:], self.certificates.get_onion_key())
+            data = data_part_1 + data_part_2
+            self.logger.info(f"Decrypted Data {data.decode('iso-8859-1')}")
             relay_message = RelayTorHeader()
             relay_message.unpack_message(data)
-            logging.info(f"src_port is {relay_message.src_server_port} and dst_port is {relay_message.dst_server_port}")
-            logging.info(f"command is {relay_message.cmd} and circId is {relay_message.circID}")
-            logging.info(f"Data is {relay_message.data}")
-        
+            self.logger.info(f"src_port is {relay_message.src_server_port} and dst_port is {relay_message.dst_server_port}")
+            self.logger.info(f"command is {relay_message.cmd} and circId is {relay_message.circID}")
+            self.logger.info(f"Data is {relay_message.data}")
+
             if relay_message.cmd == RELAY_CMD_ENUM['CREATE']:
-                logging.info(f"{self.tags['connection']} Creating circuit {relay_message.circID} from {self.port}") 
+                self.logger.info(f"Creating circuit {relay_message.circID} from {relay_message.src_server_port}") 
                 self.circuit_create_received(relay_message.circID, relay_message.src_server_port)
-                logging.info(f"{self.tags['connection']} Created circuit {relay_message.circID} from {self.port}")
+                self.logger.info(f"Created circuit {relay_message.circID} from {relay_message.src_server_port}")
 
             elif relay_message.cmd == RELAY_CMD_ENUM['EXTEND']:
-                logging.info(f"{self.tags['connection']} Extending circuit {relay_message.circID} from {self.port} to {relay_message.dst_server_port}")
-                self.circuit_extend_received(relay_message.circID, relay_message.dst_server_port, relay_message.data)
-                logging.info(f"{self.tags['connection']} Extended circuit {relay_message.circID} from {self.port} to {relay_message.dst_server_port}")
+                self.logger.info(f"Extending circuit {relay_message.circID} to {relay_message.dst_server_port}")
+                self.circuit_extend_received(relay_message.circID, relay_message.dst_server_port)
+                self.logger.info(f"Extended circuit {relay_message.circID} to {relay_message.dst_server_port}")
 
             elif relay_message.cmd == RELAY_CMD_ENUM['RELAY_DATA']:
                 if relay_message.circID in self.all_circuits:
                     self.relay_data_received(relay_message.circID, relay_message.data)
                 else:
-                    logging.info(f"{self.tags['connection']} Received message: {relay_message.data} from {client_addr}")
+                    self.logger.info(f"Received message: {relay_message.data} from {client_addr}")
                     # TODO: Send backwards
 
         client_sock.close()
-        logging.info(f"{self.tags['connection']} closed connection with {client_addr}")
+        self.logger.info(f"closed connection with {client_addr}")
 
 
     def start_outgoing_connection(self, ip: str, port: int):
-        logging.info(f"{self.tags['connection']} starting outgoing connection to {ip}:{port}")
+        self.logger.info(f"starting outgoing connection to {ip}:{port}")
 
         next_relay_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # next_relay_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -238,20 +255,20 @@ class OnionRelay:
         }
         response = requests.post(url, json=data)
         if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully uploaded state to directory")
+            self.logger.info(f"Successfully uploaded state to directory")
             return True
         else:
-            logging.error(f"{self.tags['start']} Failed to upload state to directory: {response.text}")
+            logging.error(f"Failed to upload state to directory: {response.text}")
             return False
 
     def download_states(self) -> List[dict] | None:
         url = f"http://{self.directory[0]}:{self.directory[1]}/download_states"
         response = requests.get(url)
         if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully downloaded states from directory")
+            self.logger.info(f"Successfully downloaded states from directory")
             return response.json()
         else:
-            logging.error(f"{self.tags['start']} Failed to download states from directory: {response.text}")
+            logging.error(f"Failed to download states from directory: {response.text}")
         return None
 
     def update_connections(self) -> None:
@@ -263,7 +280,7 @@ class OnionRelay:
         '''
         self.relay_states = self.download_states()
         if self.relay_states is None:
-            logging.error(f"{self.tags['start']} Failed to download states from directory")
+            logging.error(f"Failed to download states from directory")
             return
         # for state in relay_states:
             
@@ -291,10 +308,10 @@ class OnionRelay:
         }
         response = requests.post(url, json=data)
         if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory")
+            self.logger.info(f"Successfully sent heartbeat to directory")
             return True
         else:
-            logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+            logging.error(f"Failed to send heartbeat to directory: {response.text}")
             return False
 
     def shutdown(self, signum=None, frame=None):
@@ -305,7 +322,7 @@ class OnionRelay:
         ]:
             if os.path.exists(file_path):
                 os.remove(file_path)
-        logging.info(f"{self.tags['connection']} shutting down OnionRelay {self.name}")
+        self.logger.info(f"shutting down OnionRelay {self.name}")
         self.shutdown_flag.set()
         with self.threads_lock:
             for thread in self.threads:
@@ -322,7 +339,7 @@ class OnionRelay:
         ]:
             if os.path.exists(file_path):
                 os.remove(file_path)
-        logging.info(f"{self.tags['connection']} OnionRelay {self.name} shut down")        
+        self.logger.info(f"OnionRelay {self.name} shut down")        
         
 
     def __str__(self):

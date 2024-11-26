@@ -9,6 +9,7 @@ RELAY_CMD_ENUM = {
 
 DATA_SIZE = 264
 NULL_PORT = 65535
+
         
     
 class RelayTorHeader():
@@ -39,13 +40,13 @@ class RelayTorHeader():
         message += packed_src_server_port
         message += packed_dst_server_port
         message += self.data
-        return message
+        return (message[:6], message[6:])
     
     def unpack_message(self, data: bytearray):
-        self.circID = struct.unpack('H', data[:2])
-        self.cmd = struct.unpack('H', data[2:4])
-        self.src_server_port = struct.unpack('H', data[4:6])
-        self.dst_server_port = struct.unpack('H', data[6:8])
+        self.circID = struct.unpack('H', data[:2])[0]
+        self.cmd = struct.unpack('H', data[2:4])[0]
+        self.src_server_port = struct.unpack('H', data[4:6])[0]
+        self.dst_server_port = struct.unpack('H', data[6:8])[0]
         self.data = data[8:]
     
     
