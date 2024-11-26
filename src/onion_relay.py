@@ -7,7 +7,7 @@
 import time
 from utils.certificates import Certificates
 from onion_directory import OnionDirectory
-from typing import Tuple, List
+from typing import Optional, List, Dict, Any, Union
 import socket
 import ssl
 import threading
@@ -228,7 +228,8 @@ class OnionRelay:
                 'signature'
             }
         """
-        url = f"http://{self.directory[0]}:{self.directory[1]}/upload_state"
+
+        url = f"https://{self.directory[0]}:{self.directory[1]}/upload_state"
         data = {
             'ip': self.ip,
             'port': self.port,
@@ -236,23 +237,74 @@ class OnionRelay:
             'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
             'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key().decode('iso-8859-1')}".encode('iso-8859-1')).hex()
         }
-        response = requests.post(url, json=data)
-        if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully uploaded state to directory")
-            return True
-        else:
-            logging.error(f"{self.tags['start']} Failed to upload state to directory: {response.text}")
+        
+        try:
+            response = requests.post(
+                url, 
+                json=data,
+                verify='../certs/tls/cert.pem',
+                cert=(self.certificates.tls_cert_file, self.certificates.tls_key_file)  # Client certificate
+            )
+            
+            if response.status_code == 200:
+                logging.info(f"{self.tags['start']} Successfully uploaded state to directory (TLS)")
+                return True
+            else:
+                logging.error(f"{self.tags['start']} Failed to upload state to directory: {response.text}")
+                return False
+        except requests.exceptions.SSLError as e:
+            logging.error(f"{self.tags['start']} SSL Error during upload_state: {e}")
             return False
+        except Exception as e:
+            logging.error(f"{self.tags['start']} Error during upload_state: {e}")
+            return False
+    
+        # url = f"http://{self.directory[0]}:{self.directory[1]}/upload_state"
+        # data = {
+        #     'ip': self.ip,
+        #     'port': self.port,
+        #     'onion_key': self.certificates.get_onion_key().decode('iso-8859-1'),
+        #     'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
+        #     'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key().decode('iso-8859-1')}".encode('iso-8859-1')).hex()
+        # }
+        # response = requests.post(url, json=data)
+        # if response.status_code == 200:
+        #     logging.info(f"{self.tags['start']} Successfully uploaded state to directory")
+        #     return True
+        # else:
+        #     logging.error(f"{self.tags['start']} Failed to upload state to directory: {response.text}")
+        #     return False
 
-    def download_states(self) -> List[dict] | None:
-        url = f"http://{self.directory[0]}:{self.directory[1]}/download_states"
-        response = requests.get(url)
-        if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully downloaded states from directory")
-            return response.json()
-        else:
-            logging.error(f"{self.tags['start']} Failed to download states from directory: {response.text}")
-        return None
+    def download_states(self) -> Optional[List[Dict[str, Any]]]:
+        url = f"https://{self.directory[0]}:{self.directory[1]}/download_states"
+        try:
+            response = requests.get(
+                url,
+                verify='../certs/tls/cert.pem',
+                cert=(self.certificates.tls_cert_file, self.certificates.tls_key_file)  # Client certificate
+            )
+            
+            if response.status_code == 200:
+                logging.info(f"{self.tags['start']} Successfully downloaded states from directory (TLS)")
+                return response.json()
+            else:
+                logging.error(f"{self.tags['start']} Failed to download states from directory: {response.text}")
+                return None
+        except requests.exceptions.SSLError as e:
+            logging.error(f"{self.tags['start']} SSL Error during download_states: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"{self.tags['start']} Error during download_states: {e}")
+            return None
+    
+        # url = f"http://{self.directory[0]}:{self.directory[1]}/download_states"
+        # response = requests.get(url)
+        # if response.status_code == 200:
+        #     logging.info(f"{self.tags['start']} Successfully downloaded states from directory")
+        #     return response.json()
+        # else:
+        #     logging.error(f"{self.tags['start']} Failed to download states from directory: {response.text}")
+        # return None
 
     def update_connections(self) -> None:
         '''
@@ -282,20 +334,49 @@ class OnionRelay:
             time.sleep(HEARTBEAT_INTERVAL)
 
     def heartbeat(self) -> bool:
-        url = f"http://{self.directory[0]}:{self.directory[1]}/heartbeat"
+        url = f"https://{self.directory[0]}:{self.directory[1]}/heartbeat"
         data = {
             'ip': self.ip,
             'port': self.port,
             'signature': self.certificates.sign(
                 f"{self.ip}{self.port}".encode('iso-8859-1')).hex()
         }
-        response = requests.post(url, json=data)
-        if response.status_code == 200:
-            logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory")
-            return True
-        else:
-            logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+        
+        try:
+            response = requests.post(
+                url, 
+                json=data,
+                verify='../certs/tls/cert.pem',
+                cert=(self.certificates.tls_cert_file, self.certificates.tls_key_file)  # Client certificate
+            )
+            
+            if response.status_code == 200:
+                logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory (TLS)")
+                return True
+            else:
+                logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+                return False
+        except requests.exceptions.SSLError as e:
+            logging.error(f"{self.tags['start']} SSL Error during heartbeat: {e}")
             return False
+        except Exception as e:
+            logging.error(f"{self.tags['start']} Error during heartbeat: {e}")
+            return False
+    
+        # url = f"http://{self.directory[0]}:{self.directory[1]}/heartbeat"
+        # data = {
+        #     'ip': self.ip,
+        #     'port': self.port,
+        #     'signature': self.certificates.sign(
+        #         f"{self.ip}{self.port}".encode('iso-8859-1')).hex()
+        # }
+        # response = requests.post(url, json=data)
+        # if response.status_code == 200:
+        #     logging.info(f"{self.tags['start']} Successfully sent heartbeat to directory")
+        #     return True
+        # else:
+        #     logging.error(f"{self.tags['start']} Failed to send heartbeat to directory: {response.text}")
+        #     return False
 
     def shutdown(self, signum=None, frame=None):
         for file_path in [
