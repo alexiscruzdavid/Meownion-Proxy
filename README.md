@@ -1,7 +1,21 @@
-# Simple-Tor
-A simple TOR Protocol Application made as part of my distributed systems graduate level course (CS512 at Duke)
+# The Meownion Proxy
+A simple TOR Protocol Application made as part of the distributed systems graduate level course (CS512 at Duke)
+
+"In implementing the MeowOnion Proxy, we believed that accessing a TOR network has been stigmatized as a frightening and conspicuous activity, and so we wanted to model our program after a kind, charming creature such as a cat"
 
 ## Installation
+
+Download/fork/clone this repository branch. 
+
+## Running the Proxy
+
+You can start up an instance of the Meownion Proxy network by running 
+`python3 start_tor.py`
+
+This will start up 5 relays and a proxy instance to interact with the network and send messages between relays. The program will also start up a terminal GUI such as the one below 
+
+![image](https://github.com/user-attachments/assets/af0d1556-74a1-4a59-9a73-5a7dce4258ca)
+
 
 
 ## Testing
