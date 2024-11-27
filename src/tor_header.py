@@ -8,7 +8,7 @@ RELAY_CMD_ENUM = {
 }    
 
 DATA_SIZE = 264
-NULL_PORT = 65535
+NULL_PORT = 65534
 
         
     
@@ -19,14 +19,14 @@ class RelayTorHeader():
         self.src_server_port = None
         self.dst_server_port = None
         self.data = None
-        logging.basicConfig(level=logging.INFO)
 
     def initialize(self, circID: int, cmd: str, src_server_port: int, dst_server_port: int, data: bytearray):
         self.circID = circID
         self.cmd = RELAY_CMD_ENUM[cmd]
         self.src_server_port = src_server_port
         self.dst_server_port = dst_server_port
-        self.data = data[:DATA_SIZE].ljust(DATA_SIZE, b'\x00') # Untested, from GPT
+        # self.data = data[:DATA_SIZE].ljust(DATA_SIZE, b'\x00')
+        self.data = data[:DATA_SIZE]
 
     def create_message(self):
         message = bytearray()

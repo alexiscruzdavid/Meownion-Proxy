@@ -36,13 +36,14 @@ class OnionProxy(Loggable):
         return -1
     
     def circuit_create_send(self, circuit_id: int, src_server_port: int, dst_server_port: int):
+        self.relay.circuit_forwarding[circuit_id] = [src_server_port, [circuit_id, dst_server_port]]
         self.relay.circuit_create_send(circuit_id, src_server_port, dst_server_port)
 
     def circuit_extend_send(self, circuit_id: int, dst_server_port: int, partial_circuit: list[dict]):
         # Only proxy can send
         NULL_DATA = bytearray(DATA_SIZE)
         relay_message = RelayTorHeader()
-        relay_message.initialize(circuit_id, 'EXTEND', dst_server_port, NULL_PORT, NULL_DATA)
+        relay_message.initialize(circuit_id, 'EXTEND', self.port , dst_server_port, NULL_DATA)
         relay_message_data_part_1, relay_message_data_part_2 = relay_message.create_message()
         
         for circuit_node in partial_circuit:
@@ -52,7 +53,6 @@ class OnionProxy(Loggable):
         self.logger.info(f"Extending circuit {circuit_id} to {dst_server_port}")
         
         relay_message_data = relay_message_data_part_1 + relay_message_data_part_2
-        
         
         forwarding_circuit, forwarding_port = self.relay.find_forwarding_port(circuit_id)
         if forwarding_port == -1:

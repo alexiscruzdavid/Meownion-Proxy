@@ -23,7 +23,7 @@ class OnionDirectory:
         
         # Start cleanup thread
         self.cleanup_thread = threading.Thread(target=self._cleanup_dead_relays, daemon=True)
-        self.cleanup_thread.start()
+        # self.cleanup_thread.start()
 
     def _cleanup_dead_relays(self):
         """Remove relays that haven't sent a heartbeat within the timeout period"""

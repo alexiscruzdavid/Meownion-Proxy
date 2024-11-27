@@ -5,31 +5,39 @@ from tor_header import RelayTorHeader
 from hashlib import sha256
 
 PADDING_BYTES = 128
+MESSAGE_SIZE = 264 + 8
 
 def encrypt_message(byte_message: bytes, key: bytes):
-    padder = padding.PKCS7(PADDING_BYTES).padder()
+    
+    print('encryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencrypting')
+    key = sha256(key).digest()[:32]
+    print(key)
+    
+    
+    byte_message = byte_message[:MESSAGE_SIZE].ljust(MESSAGE_SIZE, b'\x00')
 
-    byte_message = padder.update(byte_message) + padder.finalize()
-    
-    
-    key = sha256(key).digest()[:16]
     # using key[:16] for the IV just for a proof of concept
-    cipher = Cipher(algorithms.AES(key), modes.CBC(key[:16]))
+    cipher = Cipher(algorithms.AES(key), modes.ECB())
     encryptor = cipher.encryptor()
     cipher_text = encryptor.update(byte_message) + encryptor.finalize()
     return cipher_text
 
 
 def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
-    key = sha256(key).digest()[:16]
-    cipher = Cipher(algorithms.AES(key), modes.CBC(key[:16]))
+    print('decryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecrypting')
+    key = sha256(key).digest()[:32]
+    print(key)
+    
+
+    cipher = Cipher(algorithms.AES(key), modes.ECB())
+    decryptor = cipher.decryptor()
+    
+
     decryptor = cipher.decryptor()
 
-    padded_message = decryptor.update(cipher_text) + decryptor.finalize()
-    
-    # unpadder = padding.PKCS7(PADDING_BYTES).unpadder()
+    byte_message = decryptor.update(cipher_text) + decryptor.finalize()
+    # unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
     # byte_message = unpadder.update(padded_message) + unpadder.finalize()
-    byte_message = padded_message
     return byte_message
 
 

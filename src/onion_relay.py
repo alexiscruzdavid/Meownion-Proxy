@@ -35,6 +35,8 @@ class OnionRelay(Loggable):
         self.name = name
         self.ip = ip
         self.port = port
+        self.onion_key = None
+        self.relay_states = None
         self.certificates = Certificates(name, ip)
         self.directory = (directory_ip, directory_port)
         self.connections = {}
@@ -73,30 +75,32 @@ class OnionRelay(Loggable):
     def circuit_create_received(self, src_circuit_id, source_server_port):
         self.logger.info(f"creating new circuit, already have {self.all_circuits} and {self.circuit_forwarding}")
         self.all_circuits.add(src_circuit_id)
-        self.circuit_forwarding[src_circuit_id] = (source_server_port, None)
+        self.circuit_forwarding[src_circuit_id] = [source_server_port, None]
         self.logger.info(f"allcircuts ={self.all_circuits} and circutforwarding={self.circuit_forwarding}")
         
-    def circuit_extend_received(self, src_circuit_id: int, dst_server_port):
+    def circuit_extend_received(self, src_circuit_id: int, dst_server_port: int, data: bytearray):
         forwarding_circuit, forwarding_port = self.find_forwarding_port(src_circuit_id)
         if forwarding_port == -1:
             dst_circuit_id = random.randint(1, 1000)
             while dst_circuit_id in self.all_circuits:
                 dst_circuit_id = random.randint(1, 1000)
             self.all_circuits.add(dst_circuit_id)
-            self.circuit_forwarding[src_circuit_id][1] = (dst_circuit_id, dst_server_port)
+            self.circuit_forwarding[src_circuit_id][1] = [dst_circuit_id, dst_server_port]
             self.circuit_create_send(dst_circuit_id, self.port, dst_server_port)
         else:
             NULL_DATA = bytearray(DATA_SIZE)
             relay_message = RelayTorHeader()
-            relay_message.initialize(forwarding_circuit, 'CREATE', NULL_PORT, forwarding_port, NULL_DATA)
+            relay_message.initialize(forwarding_circuit, 'CREATE', NULL_PORT, forwarding_port, data)
             relay_message_1, relay_message_2 = relay_message.create_message()
-            self.relay_message_to_next_hop(forwarding_port, relay_message_1 + relay_message_2)
+            relay_message = RelayTorHeader()
+            relay_message =  relay_message_1 + relay_message_2
+            self.relay_message_to_next_hop(forwarding_port, relay_message)
             
 
-    def circuit_create_send(self, src_circuit_id: int, src_server_port: int, dst_server_port: int):
+    def circuit_create_send(self, dst_circuit_id: int, src_server_port: int, dst_server_port: int):
         NULL_DATA = bytearray(DATA_SIZE)
         relay_message = RelayTorHeader()
-        relay_message.initialize(src_circuit_id, 'CREATE', src_server_port, NULL_PORT, NULL_DATA)
+        relay_message.initialize(dst_circuit_id, 'CREATE', src_server_port, NULL_PORT, NULL_DATA)
         relay_message_data_part_1, relay_message_data_part_2 = relay_message.create_message()
         for relay_state in self.relay_states:
             if relay_state['port'] == dst_server_port:
@@ -108,7 +112,7 @@ class OnionRelay(Loggable):
     def relay_data_received(self, src_circuit_id: int, data: bytearray):
         for relay_state in self.relay_states:
             if relay_state['port'] == dst_server_port:
-                dst_relay_onion_key = relay_state['onion_key']        
+                dst_relay_onion_key = relay_state['onion_key'].encode('iso-8859-1')      
         
         # Going forwards
         if src_circuit_id in self.circuit_forwarding:
@@ -119,14 +123,14 @@ class OnionRelay(Loggable):
             
             relay_message_data_part_2 = encrypt_message(relay_message_data_part_2, dst_relay_onion_key)
             relay_message_data = relay_message_data_part_1 + relay_message_data_part_2
-            self.relay_message_to_next_hop(dst_server_port, relay_message_data.decode())
+            self.relay_message_to_next_hop(dst_server_port, relay_message_data)
         # Going backwards, check values
         else:
             dst_circuit_id, dst_server_port = self.find_returning_port(src_circuit_id)
             relay_message = RelayTorHeader()
             relay_message.initialize(dst_circuit_id, 'RELAY_DATA', NULL_PORT, NULL_PORT, data)
             relay_message_data_part_1, relay_message_data_part_2 = relay_message.create_message()
-            relay_message_data_part_2 = encrypt_message(relay_message_data_part_2, dst_relay_onion_key.decode())
+            relay_message_data_part_2 = encrypt_message(relay_message_data_part_2, dst_relay_onion_key)
             relay_message_data = relay_message_data_part_1 + relay_message_data_part_2
             self.relay_message_to_next_hop(dst_server_port, relay_message_data)
      
@@ -139,13 +143,18 @@ class OnionRelay(Loggable):
     def find_forwarding_port(self, src_circuit_id: int):
         circuit_forwarding_value = self.circuit_forwarding.get(src_circuit_id, -1)
         if circuit_forwarding_value != -1 and circuit_forwarding_value[1] is not None:
-            circuit_forwarding_id = circuit_forwarding_value[1]
+            circuit_forwarding_id = circuit_forwarding_value[1][0]
             circuit_forwarding_port = circuit_forwarding_value[1][1]
             return circuit_forwarding_id, circuit_forwarding_port
         return -1, -1
 
     def relay_message_to_next_hop(self, next_relay_port, relay_message_data):
         self.logger.info(f"creating message from {self.ip}:{self.port}")
+        relay_message = RelayTorHeader()
+        relay_message.unpack_message(relay_message_data)
+        self.logger.info(f"src_port is {relay_message.src_server_port} and dst_port is {relay_message.dst_server_port}")
+        self.logger.info(f"command is {relay_message.cmd} and circId is {relay_message.circID}")
+        self.logger.info(f"Data is {relay_message.data}")
         # TODO Go back to using connections eventually first IP, then storing sockets
         # with self.connections_lock:
         #     next_relay_socket = self.connections[f"{next_relay_ip}:{next_relay_port}"]
@@ -157,11 +166,10 @@ class OnionRelay(Loggable):
     def accept_incoming_connections(self):
         while not self.shutdown_flag.is_set():
             
-            self.logger.info(f"istening on {self.ip}:{self.port}")
+            self.logger.info(f"listening on {self.ip}:{self.port}")
             
             client_sock, client_addr = self.server_sock.accept()
-            
-            self.logger.info(f"accepted connection from {client_addr}")
+            client_ip, client_port = client_addr
             
             client_sock_thread = threading.Thread(target=self.handle_incoming_connection, args=(client_sock, client_addr), daemon=True)
             with self.threads_lock:
@@ -171,30 +179,29 @@ class OnionRelay(Loggable):
     def handle_incoming_connection(self, client_sock, client_addr):
         '''
         TODO: Change close function to be when done
-        '''
-
-        self.logger.info(f"received from {client_addr}")
-        
-        data = bytes()
+        '''        
+        data = bytearray()
         while True:
             temp = client_sock.recv(1024)
             if not temp:
                 break
             data += temp
-        self.logger.info(f"Data {data.decode('iso-8859-1')[:2]}")
+        # self.logger.info(f"Data {data.decode('iso-8859-1')[:2]}")
         self.logger.info(f"Data Size {len(data)}")
         if data:
             # TODO: Haven't encrypted it yet, but we are still decrypting it. Create message, ... is not
             # encrypting the message
+            print(f"Data size: {len(data)}")
             data_part_1 = data[:6]
-            data_part_2 = decrypt_message(data[6:], self.certificates.get_onion_key())
+            data_part_2 = decrypt_message(data[6:], self.certificates.get_onion_key().encode('iso-8859-1'))
             data = data_part_1 + data_part_2
-            self.logger.info(f"Decrypted Data {data.decode('iso-8859-1')}")
+            self.logger.info(f" data_part_1 size: {len(data_part_1)}, data_part_2 size: {len(data_part_2)}")
+            # self.logger.info(f"Decrypted Data {data.decode('iso-8859-1')[:2]}")
             relay_message = RelayTorHeader()
             relay_message.unpack_message(data)
             self.logger.info(f"src_port is {relay_message.src_server_port} and dst_port is {relay_message.dst_server_port}")
             self.logger.info(f"command is {relay_message.cmd} and circId is {relay_message.circID}")
-            self.logger.info(f"Data is {relay_message.data}")
+            # self.logger.info(f"Data is {relay_message.data}")
 
             if relay_message.cmd == RELAY_CMD_ENUM['CREATE']:
                 self.logger.info(f"Creating circuit {relay_message.circID} from {relay_message.src_server_port}") 
@@ -203,7 +210,7 @@ class OnionRelay(Loggable):
 
             elif relay_message.cmd == RELAY_CMD_ENUM['EXTEND']:
                 self.logger.info(f"Extending circuit {relay_message.circID} to {relay_message.dst_server_port}")
-                self.circuit_extend_received(relay_message.circID, relay_message.dst_server_port)
+                self.circuit_extend_received(relay_message.circID, relay_message.dst_server_port, relay_message.data)
                 self.logger.info(f"Extended circuit {relay_message.circID} to {relay_message.dst_server_port}")
 
             elif relay_message.cmd == RELAY_CMD_ENUM['RELAY_DATA']:
@@ -249,9 +256,9 @@ class OnionRelay(Loggable):
         data = {
             'ip': self.ip,
             'port': self.port,
-            'onion_key': self.certificates.get_onion_key().decode('iso-8859-1'),
-            'long_term_key': self.certificates.get_identity_key().decode('iso-8859-1'),
-            'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key().decode('iso-8859-1')}".encode('iso-8859-1')).hex()
+            'onion_key': self.certificates.get_onion_key(),
+            'long_term_key': self.certificates.get_identity_key(),
+            'signature': self.certificates.sign(f"{self.ip}{self.port}{self.certificates.get_onion_key()}".encode('iso-8859-1')).hex()
         }
         response = requests.post(url, json=data)
         if response.status_code == 200:

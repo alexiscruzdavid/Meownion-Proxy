@@ -38,13 +38,13 @@ class Certificates(Loggable):
 
 
     def get_onion_key(self):
-        with open(self.onion_pub_key_file, 'rb') as f:
+        with open(self.onion_pub_key_file, 'r') as f:
             onion_key = f.read()
             self.logger.info(f"Fetched onion public key for {self.name}")
             return onion_key
 
     def get_identity_key(self):
-        with open(self.identity_pub_key_file, 'rb') as f:
+        with open(self.identity_pub_key_file, 'r') as f:
             identity_key = f.read()
             self.logger.info(f"Fetched identity public key for {self.name}")
             return identity_key

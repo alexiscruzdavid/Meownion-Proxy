@@ -59,7 +59,10 @@ onion_relays = []
 
 for port in range(START_PORT, END_PORT):
     onion_relays.append(OnionRelay('{}:{}'.format('127.0.0.1', port), '127.0.0.1', port))
+    # curr_key_arr = [relay_state['onion_key'].encode('iso-8859-1') for relay_state in onion_relays[port-START_PORT].relay_states if relay_state['port'] == port]
+    # onion_relays[port-START_PORT].onion_key = curr_key_arr[0]
     onion_relays[port-START_PORT].start()
+    
 
 
 
@@ -89,13 +92,16 @@ if __name__ == '__main__':
     time.sleep(5)
 
     for index, relay_state in enumerate(circuit[1:], start=1):
-        op.circuit_extend_send(0, relay_state['port'], circuit[index:])
+        print(f"PLEASE MAKE IT STOP PLEASE MAKE IT STOP THE ABD ACTOR IS {relay_state['port']}")
+        op.circuit_extend_send(0, relay_state['port'], circuit[:index+1])
         time.sleep(5)
         
     time.sleep(5)
     # op.start(circuit)
     for relay in onion_relays:
         print(f"{relay.name} \n all_circuits: {relay.all_circuits} \n circuit_forwarding: {relay.circuit_forwarding} \n")
+        
+    print(f"{op.relay.name} \n all_circuits: {op.relay.all_circuits} \n circuit_forwarding: {op.relay.circuit_forwarding} \n")
     print(f"op circuits: {circuit} \n")
 
     
