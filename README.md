@@ -25,5 +25,3 @@ A message can then be sent once prompted as well as a destination port (correspo
 ## Testing
 Various unit tests, which both mock and utilize real resources are available under the tests file. To run use this command
 in the main directory,
-
-`pytest -v`
