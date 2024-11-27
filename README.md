@@ -5,8 +5,7 @@ A simple TOR Protocol Application made as part of the distributed systems gradua
 
 # Design Doc
 
-For a more in-depth analysis of the software, we have written this design document.
-https://docs.google.com/document/d/1MR6-1vJ7Y1ri9Q1NXVFy7VRSwsAm43aA7r1uSMM9FiM/edit?tab=t.0
+For a more in-depth analysis of the software, we have written a design document also attached to this repository.
 
 ## Installation
 
