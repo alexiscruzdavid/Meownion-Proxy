@@ -3,6 +3,11 @@ A simple TOR Protocol Application made as part of the distributed systems gradua
 
 "In implementing the MeowOnion Proxy, we believed that accessing a TOR network has been stigmatized as a frightening and conspicuous activity, and so we wanted to model our program after a kind, charming creature such as a cat"
 
+# Design Doc
+
+For a more in-depth analysis of the software, we have written this design document.
+https://docs.google.com/document/d/1MR6-1vJ7Y1ri9Q1NXVFy7VRSwsAm43aA7r1uSMM9FiM/edit?tab=t.0
+
 ## Installation
 
 Download/fork/clone this repository branch. 
