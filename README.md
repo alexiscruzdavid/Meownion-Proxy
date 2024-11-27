@@ -5,7 +5,7 @@ A simple TOR Protocol Application made as part of the distributed systems gradua
 
 # Design Doc
 
-For a more in-depth analysis of the software, we have written a design document also attached to this repository.
+For a more in-depth analysis of the software, we have written a design document also attached to this repository. It is in MeowOnion Proxy-1.pdf
 
 ## Installation
 
