@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 NUMER_OF_RELAYS = 5
 MAX_RELAYS = 30
 MAX_CLIENTS = 30
-START_PORT = 23000
+START_PORT = 24000
 END_PORT = START_PORT + 5
 PROXY_PORT = END_PORT + 1
 
@@ -92,7 +92,6 @@ if __name__ == '__main__':
     time.sleep(5)
 
     for index, relay_state in enumerate(circuit[1:], start=1):
-        print(f"PLEASE MAKE IT STOP PLEASE MAKE IT STOP THE ABD ACTOR IS {relay_state['port']}")
         op.circuit_extend_send(0, relay_state['port'], circuit[:index+1])
         time.sleep(5)
         

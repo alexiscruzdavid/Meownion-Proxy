@@ -40,7 +40,7 @@ class RelayTorHeader():
         message += packed_src_server_port
         message += packed_dst_server_port
         message += self.data
-        return (message[:6], message[6:])
+        return (message[:8], message[8:])
     
     def unpack_message(self, data: bytearray):
         self.circID = struct.unpack('H', data[:2])[0]

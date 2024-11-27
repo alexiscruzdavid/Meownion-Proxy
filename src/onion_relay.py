@@ -187,13 +187,13 @@ class OnionRelay(Loggable):
                 break
             data += temp
         # self.logger.info(f"Data {data.decode('iso-8859-1')[:2]}")
-        self.logger.info(f"Data Size {len(data)}")
+        # self.logger.info(f"Data Size {len(data)}")
         if data:
             # TODO: Haven't encrypted it yet, but we are still decrypting it. Create message, ... is not
             # encrypting the message
-            print(f"Data size: {len(data)}")
-            data_part_1 = data[:6]
-            data_part_2 = decrypt_message(data[6:], self.certificates.get_onion_key().encode('iso-8859-1'))
+            # print(f"Data size: {len(data)}")
+            data_part_1 = data[:8]
+            data_part_2 = decrypt_message(data[8:], self.certificates.get_onion_key().encode('iso-8859-1'))
             data = data_part_1 + data_part_2
             self.logger.info(f" data_part_1 size: {len(data_part_1)}, data_part_2 size: {len(data_part_2)}")
             # self.logger.info(f"Decrypted Data {data.decode('iso-8859-1')[:2]}")

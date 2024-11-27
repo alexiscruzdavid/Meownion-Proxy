@@ -56,7 +56,7 @@ class OnionProxy(Loggable):
         
         forwarding_circuit, forwarding_port = self.relay.find_forwarding_port(circuit_id)
         if forwarding_port == -1:
-            self.logger.info(f"HELP ME HELP ME HELP ME HELP ME")
+            pass
         else:
             self.relay_message_to_next_hop(forwarding_port, relay_message_data)
             

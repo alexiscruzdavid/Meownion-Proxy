@@ -9,12 +9,13 @@ MESSAGE_SIZE = 264 + 8
 
 def encrypt_message(byte_message: bytes, key: bytes):
     
-    print('encryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencryptingencrypting')
     key = sha256(key).digest()[:32]
     print(key)
     
+    padder = padding.PKCS7(algorithms.AES.block_size).padder()
+    padded_message = padder.update(byte_message) + padder.finalize()
     
-    byte_message = byte_message[:MESSAGE_SIZE].ljust(MESSAGE_SIZE, b'\x00')
+    byte_message = padded_message[:MESSAGE_SIZE].ljust(MESSAGE_SIZE, b'\x00')
 
     # using key[:16] for the IV just for a proof of concept
     cipher = Cipher(algorithms.AES(key), modes.ECB())
@@ -24,7 +25,7 @@ def encrypt_message(byte_message: bytes, key: bytes):
 
 
 def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
-    print('decryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecryptingdecrypting')
+
     key = sha256(key).digest()[:32]
     print(key)
     
@@ -36,8 +37,7 @@ def decrypt_message(cipher_text: bytes, key: bytes) -> bytes:
     decryptor = cipher.decryptor()
 
     byte_message = decryptor.update(cipher_text) + decryptor.finalize()
-    # unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
-    # byte_message = unpadder.update(padded_message) + unpadder.finalize()
+    
     return byte_message
 
 
